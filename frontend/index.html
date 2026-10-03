@@ -1,0 +1,414 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta
+      name="description"
+      content="Nimbus Weather — a dense local forecast page: current conditions, hourly and 14-day outlooks, radar, air quality and astronomy."
+    />
+    <meta name="theme-color" content="#F3F6FA" id="meta-theme-color" />
+    <title>Nimbus Weather — Local Forecast</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- IBM Plex, three cuts, chosen for the instrument-panel direction.
+         - Plex Sans           headings, prose, controls. Engineered, slightly
+                               technical, and not a default UI face.
+         - Plex Sans Condensed the dense grid labels. The condensed width buys
+                               back roughly 12% horizontal space per label, which
+                               is what makes letterspaced technical labels fit
+                               the 58px hourly column at all.
+         - Plex Mono           EVERY numeric readout: the hero temperature, the
+                               hourly strip, the daily table, the details grid,
+                               the AQI value. A monospace figure is inherently
+                               tabular, so the alignment the data columns depend
+                               on is structural rather than a font feature that
+                               could be lost.
+         Monospace is also the correct register for an instrument: a readout is a
+         fixed-pitch field, not running text. -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Leaflet for interactive maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+
+  <body data-condition="clear">
+    <a class="skip-link" id="skip-link" href="#forecast">Skip to forecast</a>
+
+    <!-- ══ MASTHEAD ══════════════════════════════════════════════════════ -->
+    <header class="site-header" id="site-header" role="banner">
+      <a class="brand" href="#main">
+        <span class="brand-icon" aria-hidden="true"><i data-lucide="cloud-sun"></i></span>
+        <span class="brand-text">
+          <span class="brand-name">Nimbus</span>
+          <span class="brand-tag">WEATHER</span>
+        </span>
+      </a>
+
+      <div class="search-wrap" role="search" aria-label="Search">
+        <form class="search-form" id="search-form" autocomplete="off">
+          <div class="search-field">
+            <span class="search-icon" aria-hidden="true"><i data-lucide="search"></i></span>
+            <!-- A real <label>, visually hidden, rather than an aria-label. The
+                 placeholder is the only visible hint and it disappears on first
+                 keystroke, so 3.3.2 was resting on it alone; and a speech-input
+                 user reading "Search city…" off the screen had nothing in the
+                 accessible name to match. `for`/`id` associates it, so the name
+                 is "Search city…" and the visible text and the name agree.
+                 The input is NOT aria-hidden — it is focusable, and hiding a
+                 focusable element from the accessibility tree removes the search
+                 box from assistive technology entirely. -->
+            <label class="visually-hidden" for="q">Search city…</label>
+            <input
+              id="q"
+              type="text"
+              placeholder="Search city…"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-controls="search-results"
+              aria-expanded="false"
+            />
+            <button
+              type="button"
+              id="geo-btn"
+              class="geo-btn"
+              aria-label="Use my location"
+            >
+              <i data-lucide="map-pin"></i>
+            </button>
+          </div>
+        </form>
+        <div
+          class="search-results"
+          id="search-results"
+          role="listbox"
+          aria-label="Search suggestions"
+          hidden
+        ></div>
+      </div>
+
+      <div class="header-right">
+        <!-- The way back out. The landing page links into the forecast, so without
+             this the reader is stranded here with no route back — a dead end on
+             the only page that has one. First in the group and hairline-separated
+             so it reads as "leave the instrument", not as another toggle. -->
+        <a class="cover-link" id="cover-link" href="landing.html">
+          <i data-lucide="arrow-left" aria-hidden="true"></i>
+          <span class="cover-label">Cover</span>
+        </a>
+        <button id="notify-toggle" class="icon-btn" aria-label="Enable weather notifications" title="Notifications">
+          <i data-lucide="bell"></i>
+        </button>
+        <button
+          id="unit-toggle"
+          class="icon-btn"
+          aria-label="Switch units to Fahrenheit"
+          title="Toggle °C / °F"
+        >
+          <span id="unit-label" aria-hidden="true">°C</span>
+        </button>
+        <button
+          id="theme-toggle"
+          class="icon-btn"
+          aria-label="Switch to dark theme"
+          title="Toggle theme"
+        >
+          <span id="theme-icon"><i data-lucide="moon"></i></span>
+        </button>
+        <span class="data-source" id="data-source" hidden></span>
+        <span class="auto-refresh" id="auto-refresh-label">Refreshes every 10 min</span>
+      </div>
+    </header>
+
+    <!-- ══ FEATURED LOCATIONS ═════════════════════════════════════════════ -->
+    <!-- A `nav`, not a bare band. As a plain container this group had no landmark
+         of its own, so its visually-hidden <h2> was the document's FIRST heading
+         and the outline opened `h2, h2, h2, h1` with the only <h1> — the loaded
+         location name — arriving fourth, under "Insights". A `nav` with an
+         `aria-label` names the group without contributing a heading at all.
+
+         That <h2> has now been removed as well, and the two notes below replace
+         the arguments that were attached to it.
+
+         A previous version of this comment claimed that moving the band into a
+         named `<nav>` meant "the outline starts at the <h1>". It did not: an
+         `<h2>` inside a `<nav>` is still an `<h2>` in the document outline. A
+         landmark changes how a group is announced, not where it sits in the
+         heading sequence. The outline still begins `h2, h2, h1` after this
+         removal, which is imperfect best practice and not a WCAG failure — no
+         success criterion in 2.2 mandates heading order. Closing it properly
+         means deciding what this page's <h1> *is* (the product, or the loaded
+         location), which changes the visual hierarchy and is not a
+         markup-only fix. Recorded rather than quietly half-solved. -->
+    <nav class="locations-bar" id="locations-bar" aria-label="Featured locations">
+      <!-- No aria-label on the inner group. The `nav`'s own aria-label above
+           already names this band, and carrying both made a screen reader
+           announce "Featured locations" twice before reaching the first city. -->
+      <div class="locations" id="locations" role="group" aria-busy="true">
+        <div class="loc-skeleton" aria-hidden="true"></div>
+        <div class="loc-skeleton" aria-hidden="true"></div>
+        <div class="loc-skeleton" aria-hidden="true"></div>
+        <div class="loc-skeleton" aria-hidden="true"></div>
+        <div class="loc-skeleton" aria-hidden="true"></div>
+      </div>
+    </nav>
+
+    <!-- ══ MAIN ═══════════════════════════════════════════════════════════ -->
+    <main class="nw-page" id="main" role="main">
+      <div class="empty-state" id="empty-state">
+        <p class="empty-title"><i data-lucide="search" aria-hidden="true"></i> Search for a city to see the forecast</p>
+        <p class="empty-sub">
+          Search above, pick a featured city, or use your current location.
+        </p>
+      </div>
+
+      <div class="forecast hidden" id="forecast">
+        <!-- ── Alerts ──────────────────────────────────────────────────── -->
+        <!-- Deliberately NOT a live region. Its contents are replaced wholesale
+             on every load, including the 10-minute auto-refresh, so a live
+             region here re-reads the entire alert text every cycle forever —
+             an unskippable recurring interruption. The single consolidated
+             announcement in loadWeather already carries the alert count, and
+             it is the more reliable path: #alerts cannot announce its own first
+             population. The region role is kept so the band is still a named
+             landmark. -->
+        <div
+          class="alerts hidden"
+          id="alerts"
+          role="region"
+          aria-label="Active weather alerts"
+        ></div>
+
+        <!-- ── Insights ────────────────────────────────────────────────── -->
+        <div class="insights hidden" id="insights" role="region" aria-labelledby="insights-heading">
+          <div class="section-head">
+            <h2 class="h-section-title" id="insights-heading">Insights</h2>
+            <p class="section-meta" id="insights-meta"></p>
+          </div>
+          <ul class="insight-list" id="insight-list" role="list"></ul>
+        </div>
+
+        <!-- ── Current ─────────────────────────────────────────────────── -->
+        <section class="section-current" id="section-current" aria-labelledby="current-heading">
+          <div class="section-head">
+            <h2 class="h-section-title" id="current-heading">Today's Weather</h2>
+            <p class="section-meta" id="current-conditions"></p>
+          </div>
+
+          <div class="current-grid">
+            <div class="current-place" id="current-place">
+              <h1 class="current-location" id="current-location">—</h1>
+              <p class="current-region" id="current-region"></p>
+              <p class="current-timezone" id="current-timezone"></p>
+              <time class="current-observed" id="current-observed" datetime="">-</time>
+              <p class="current-generated" id="current-generated"></p>
+            </div>
+
+            <div class="current-block" id="current-block">
+              <div class="current-icon" id="current-icon" data-condition="clear" aria-hidden="true">
+                <i data-lucide="thermometer"></i>
+              </div>
+              <div class="current-temp-wrap" id="current-temp-wrap">
+                <p class="current-temp num" id="current-temp">—</p>
+                <p class="current-condition" id="current-condition">—</p>
+                <p class="inline-error hidden" id="current-error">
+                  <span id="current-error-text"></span>
+                  <button type="button" class="link-btn" id="retry-btn">Retry</button>
+                </p>
+              </div>
+            </div>
+
+            <ul class="current-facts" id="current-facts" role="list">
+              <li class="fact" role="listitem">
+                <span class="fact-label">Feels like</span>
+                <span class="fact-value num" id="fact-feels">—</span>
+              </li>
+              <li class="fact" role="listitem">
+                <span class="fact-label">High</span>
+                <span class="fact-value num" id="fact-high">—</span>
+              </li>
+              <li class="fact" role="listitem">
+                <span class="fact-label">Low</span>
+                <span class="fact-value num" id="fact-low">—</span>
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- ── Hourly ──────────────────────────────────────────────────── -->
+        <section class="section-hourly" id="section-hourly" aria-labelledby="hourly-heading">
+          <div class="section-head">
+            <h2 class="h-section-title" id="hourly-heading">Hourly Forecast</h2>
+            <p class="section-meta">
+              <span id="hourly-step"></span>
+              <span id="hourly-range"></span>
+              <span id="hourly-wind"></span>
+            </p>
+          </div>
+          <div class="panel">
+            <div class="hourly-chart-wrap" id="hourly-chart-wrap">
+              <svg
+                class="hourly-chart"
+                id="hourly-chart"
+                role="img"
+                aria-label="Hourly temperature trend"
+              ></svg>
+            </div>
+            <div
+              class="hourly-scroll"
+              id="hourly-scroll"
+              tabindex="0"
+              role="region"
+              aria-label="Hourly forecast, scrollable"
+            >
+              <ul class="hourly" id="hourly" role="list"></ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── Daily ───────────────────────────────────────────────────── -->
+        <section class="section-daily" id="section-daily" aria-labelledby="daily-heading">
+          <div class="section-head">
+            <h2 class="h-section-title" id="daily-heading">7-Day Forecast</h2>
+            <p class="section-meta" id="daily-meta"></p>
+          </div>
+          <div class="panel panel-flush daily-scroll" id="daily-scroll" tabindex="0" role="region" aria-label="Daily forecast, scrollable">
+            <ul class="daily" id="daily" role="list"></ul>
+          </div>
+        </section>
+
+        <!-- ── Map ─────────────────────────────────────────────────────── -->
+        <section class="section-map" id="section-map" aria-labelledby="map-heading">
+          <div class="section-head">
+            <h2 class="h-section-title" id="map-heading">Weather Radar &amp; Maps</h2>
+            <p class="section-meta" id="map-layer-refresh"></p>
+          </div>
+          <div class="map-stage" id="map-stage">
+            <!-- .map-frame is the containing block for .map-recentre, so the
+                 button stays pinned inside the map even when the layer switcher
+                 drops out of absolute positioning below it at <=639px. -->
+            <div class="map-frame">
+              <div class="weather-map" id="weather-map" role="region" aria-label="Interactive weather map"></div>
+              <button
+                type="button"
+                class="map-recentre"
+                id="map-recentre"
+                aria-label="Centre the map on this location"
+                title="Centre on location"
+              >
+                <i data-lucide="locate-fixed"></i>
+              </button>
+            </div>
+            <div class="map-layer-switch" id="map-layer-switch" role="group" aria-label="Map layer">
+              <span class="map-switch-rule" aria-hidden="true"></span>
+              <input
+                type="range"
+                id="map-opacity"
+                min="0"
+                max="100"
+                value="70"
+                step="5"
+                aria-label="Layer opacity"
+              />
+            </div>
+          </div>
+          <p class="map-caption" id="map-caption"></p>
+        </section>
+
+        <!-- ── Details ─────────────────────────────────────────────────── -->
+        <section class="section-details" id="section-details" aria-labelledby="details-heading">
+          <div class="section-head">
+            <h2 class="h-section-title" id="details-heading">Current Weather Details</h2>
+          </div>
+          <div class="panel panel-flush">
+            <dl class="details" id="details"></dl>
+          </div>
+        </section>
+
+        <!-- ── Air quality ‖ Astronomy ─────────────────────────────────── -->
+        <div class="section-pair" id="section-pair" role="group" aria-label="Air quality and astronomy">
+          <section class="section-air-quality" id="section-air-quality" aria-labelledby="air-quality-heading">
+            <div class="section-head">
+              <h2 class="h-section-title" id="air-quality-heading">Air Quality</h2>
+            </div>
+            <div class="panel">
+              <div class="air-quality-head" id="air-quality-head">
+                <p class="aqi-value num" id="aqi-value">—</p>
+                <div class="aqi-meta" id="aqi-meta">
+                  <p class="aqi-category" id="aqi-category">—</p>
+                  <p class="aqi-advice" id="aqi-advice"></p>
+                </div>
+              </div>
+              <div class="aqi-scale" id="aqi-scale">
+                <div
+                  class="aqi-scale-bar"
+                  id="aqi-scale-bar"
+                  role="img"
+                  aria-label="Air quality scale"
+                >
+                  <span class="aqi-seg" data-aqi-cat="good" title="Good"></span>
+                  <span class="aqi-seg" data-aqi-cat="moderate" title="Moderate"></span>
+                  <span class="aqi-seg" data-aqi-cat="unhealthy_sensitive" title="Unhealthy for sensitive groups"></span>
+                  <span class="aqi-seg" data-aqi-cat="unhealthy" title="Unhealthy"></span>
+                  <span class="aqi-seg" data-aqi-cat="very_unhealthy" title="Very unhealthy"></span>
+                  <span class="aqi-seg" data-aqi-cat="hazardous" title="Hazardous"></span>
+                </div>
+                <div class="aqi-scale-labels" id="aqi-scale-labels" aria-hidden="true">
+                  <span>Good</span><span>Hazardous</span>
+                </div>
+              </div>
+              <ul class="aqi-components" id="aqi-components" role="list"></ul>
+            </div>
+          </section>
+
+          <section class="section-astronomy" id="section-astronomy" aria-labelledby="astronomy-heading">
+            <div class="section-head">
+              <h2 class="h-section-title" id="astronomy-heading">Astronomy</h2>
+            </div>
+            <div class="panel">
+              <div class="astro-arc" id="astro-arc" role="img" aria-label="Daylight arc"></div>
+              <p class="astro-arc-legend" id="astro-arc-legend">
+                <span id="astro-daylight-progress"></span>
+              </p>
+              <dl class="astronomy" id="astronomy"></dl>
+              <p class="astro-subrule" id="astro-subrule">Light windows</p>
+              <dl class="astronomy astro-light" id="astro-light"></dl>
+            </div>
+          </section>
+        </div>
+      </div><!-- /forecast -->
+    </main>
+
+    <!-- ══ FOOTER ════════════════════════════════════════════════════════ -->
+    <footer class="site-footer" id="site-footer" role="contentinfo">
+      <span>Nimbus Weather</span>
+      <span class="footer-sep" aria-hidden="true">·</span>
+      <span id="footer-credit">Data via the Nimbus API</span>
+      <span class="footer-sep" aria-hidden="true">·</span>
+      <span><a href="https://openweathermap.org" target="_blank" rel="noopener">openweathermap.org</a></span>
+    </footer>
+
+    <!-- ══ MOBILE JUMP BAR ═══════════════════════════════════════════════ -->
+    <nav class="jump-bar" id="jump-bar" aria-label="Sections">
+      <a class="jump-link" href="#section-current" data-target="section-current">Now</a>
+      <a class="jump-link" href="#section-hourly" data-target="section-hourly">Hourly</a>
+      <a class="jump-link" href="#section-daily" data-target="section-daily">Daily</a>
+      <a class="jump-link" href="#section-map" data-target="section-map">Radar</a>
+      <a class="jump-link" href="#section-details" data-target="section-details">Details</a>
+      <a class="jump-link jump-link-extra" href="#section-air-quality" data-target="section-air-quality">Air</a>
+    </nav>
+
+    <p class="toast" id="toast" aria-hidden="true" hidden></p>
+    <p class="visually-hidden" id="live-status" role="status" aria-live="polite"></p>
+
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

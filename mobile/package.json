@@ -1,0 +1,49 @@
+{
+  "name": "@nimbus/mobile",
+  "version": "1.0.0",
+  "private": true,
+  "main": "expo/AppEntry.js",
+  "scripts": {
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "lint": "tsc --noEmit",
+    "start": "expo start",
+    "test": "jest --passWithNoTests",
+    "test:coverage": "jest --coverage",
+    "typecheck": "tsc --noEmit",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "^14.1.0",
+    "@nimbus/shared": "file:../packages/shared",
+    "@react-native-async-storage/async-storage": "^1.24.0",
+    "@react-navigation/bottom-tabs": "^7.0.0",
+    "@react-navigation/native": "^7.0.0",
+    "@react-navigation/native-stack": "^7.0.0",
+    "@tanstack/query-async-storage-persister": "^5.59.0",
+    "@tanstack/react-query": "^5.59.0",
+    "@tanstack/react-query-persist-client": "^5.59.0",
+    "expo": "~53.0.0",
+    "expo-constants": "~17.1.0",
+    "expo-location": "~18.1.0",
+    "expo-notifications": "~0.31.0",
+    "expo-secure-store": "~14.2.0",
+    "expo-status-bar": "~2.2.0",
+    "react": "19.0.0",
+    "react-native": "0.79.0",
+    "react-native-gesture-handler": "~2.24.0",
+    "react-native-reanimated": "~3.17.0",
+    "react-native-safe-area-context": "~5.4.0",
+    "react-native-screens": "~4.11.0",
+    "react-native-svg": "15.11.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.14.0",
+    "@types/react": "~19.0.0",
+    "jest": "^29.7.0",
+    "jest-expo": "~53.0.0",
+    "typescript": "^5.8.0"
+  }
+}

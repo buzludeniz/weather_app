@@ -1,0 +1,67 @@
+# Nimbus Weather Platform on Fly.io.
+#
+# Two process groups from the same image:
+#   - `api`     serves HTTP, with the in-process scanner disabled
+#   - `scanner`  runs the severe-alert scan loop and nothing else
+#
+# Splitting them keeps request latency independent of scan work, and lets the
+# scanner restart without dropping requests.
+#
+# The scanner is a long-running machine rather than a Fly scheduled job. A cron
+# invocation would add container start-up on top of the scheduler's own jitter,
+# which risks breaching the PRD's "push within two minutes of the alert" target.
+# Note `auto_stop_machines = false`: a machine that hibernates when idle would
+# silently stop delivering warnings, which is exactly the failure this
+# deployment exists to prevent.
+
+app = "nimbus-weather"
+primary_region = "ams"
+
+[build]
+  dockerfile = "backend/Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "4000"
+  ALERT_SCAN_INTERVAL_MS = "300000"
+
+[[services]]
+  http_checks = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 4000
+    handlers = ["http"]
+    force_https = true
+
+  [services.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[services.processes]]
+    cmd = "node dist/backend/src/index.js"
+    # The API must not also scan, or every alert would be evaluated twice.
+    env = { ALERT_SCANNER_ENABLED = "false" }
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+  [vm.processes]
+    # Long-running scanner. Not exposed over HTTP.
+    cmd = "node dist/backend/src/scan.js"
+    env = { ALERT_SCANNER_ENABLED = "true" }
+
+  [vm.processes.checks]
+    # No health check: the scanner serves no traffic. Liveness is judged by the
+    # absence of scan lines in the logs.
+
+# Required secrets, set with `fly secrets set`:
+#   DATABASE_URL        postgres connection string
+#   REDIS_URL           redis connection string
+#   WEATHER_PROVIDER_API_KEY
+#   EXPO_ACCESS_TOKEN   from the Expo dashboard
