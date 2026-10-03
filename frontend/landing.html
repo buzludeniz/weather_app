@@ -1,0 +1,736 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nimbus Weather — a forecast instrument</title>
+<meta name="description" content="A dense, professional forecast page that shows you what it doesn't know. Every absent reading is rendered as an em dash, never as a fabricated number." />
+<meta name="color-scheme" content="dark" />
+
+<!-- Three cuts, two registers. Newsreader carries the human claim; Plex Mono
+     carries every number, because a monospace figure is inherently tabular and a
+     readout is a fixed-pitch field rather than running text. Plex Sans
+     Condensed carries the engraved labels — tracking adds width, and the
+     condensed cut takes it straight back. -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,500;1,6..72,300&display=swap"
+  rel="stylesheet"
+/>
+
+<!-- The grain is an inline SVG feTurbulence tile, not a request: 400 bytes, no
+     network, cannot 404, and the alpha is baked in so one token controls it. -->
+<style>
+  :root {
+    /* Reused verbatim from the app's dark theme. Every value below was solved
+       numerically against the surface it actually lands on — 4.53:1 worst case
+       across all pairs — so the landing page inherits the app's verified
+       contrast rather than inventing a second palette to get wrong. */
+    --page:        hsl(216 32% 9%);
+    --surface:     hsl(216 26% 13%);
+    --sunken:      hsl(216 28% 11%);
+    --alt:         hsl(216 24% 15%);
+    --border:      hsl(215 20% 22%);
+    --border-str:  hsl(215 16% 36%);
+    --rule:        hsl(215 20% 19%);
+    --text:        hsl(210 28% 95%);
+    --body:        hsl(212 16% 74%);
+    /* Same reasoning, and the same values, as `.theme-dark` in styles.css: this
+       page is dark-only on the same `--page` ground, so it inherited the same
+       4.07:1 failure on `--faint` and needed the same fix. Lightest ground
+       pixel rgb(32,47,59); faint now 4.63:1 and muted 5.23:1 there. */
+    --muted:       hsl(214 13% 63.6%);
+    --faint:       hsl(215 11% 59.8%);
+    --accent:      hsl(211 88% 70%);
+    --accent-deep: hsl(213 45% 19%);
+    --temp-high:   hsl(24 90% 47.7%);
+    --temp-low:    hsl(203 72% 62%);
+    --precip:      hsl(199 84% 55%);
+
+    /* Atmosphere — all of it BEHIND content. Anything painted over text eats
+       into the solved contrast on every pair. */
+    --grid-line:  hsl(210 40% 80% / 0.030);
+    --mesh-1:     hsl(211 88% 60% / 0.10);
+    --mesh-2:     hsl(199 84% 55% / 0.07);
+    --mesh-3:     hsl(215 60% 50% / 0.07);
+    --grid-pitch: 4px;
+    --notch:      7px;
+    --tick-pitch: 8px;
+    --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='0.055'/%3E%3C/svg%3E");
+
+    --font-display: 'Newsreader', Georgia, serif;
+    --font-num:     'IBM Plex Mono', ui-monospace, 'SF Mono', 'Cascadia Mono', monospace;
+    --font-cond:    'IBM Plex Sans Condensed', 'IBM Plex Sans', system-ui, sans-serif;
+    --track-label:  0.14em;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html {
+    background: var(--page);
+    /* `clip` not `hidden`: `hidden` on the root breaks `position: sticky`. */
+    overflow-x: clip;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    font: 400 1rem/1.6 var(--font-cond);
+    color: var(--body);
+    isolation: isolate;
+    overflow-x: clip;
+    background-color: var(--page);
+    background-image:
+      radial-gradient(120% 80% at 10% -10%, var(--mesh-1), transparent 60%),
+      radial-gradient(100% 70% at 94% 6%,   var(--mesh-2), transparent 55%),
+      radial-gradient(140% 90% at 50% 108%, var(--mesh-3), transparent 65%),
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size:
+      100% 100%, 100% 100%, 100% 100%,
+      var(--grid-pitch) var(--grid-pitch), var(--grid-pitch) var(--grid-pitch);
+    background-attachment: fixed;
+  }
+
+  /* The grain sits behind everything, ignores the pointer, and never scrolls. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.85;
+    background-image: var(--grain);
+    background-size: 180px 180px;
+  }
+
+  .wrap {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 0 clamp(16px, 4vw, 40px) clamp(48px, 8vw, 96px);
+  }
+
+  /* ── engraved label ────────────────────────────────────────────────────
+     The one label style. Letterspaced, uppercase, condensed — and it is never
+     applied to a number, because tracking a figure destroys the alignment mono
+     exists to provide. */
+  .eng {
+    font: 600 0.6875rem/1.2 var(--font-cond);
+    letter-spacing: var(--track-label);
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* ── the bezel ──────────────────────────────────────────────────────────
+     A chamfered top-left corner, drawn as a diagonal hairline meeting the
+     border exactly at the radius. A gradient, not clip-path: clip-path would
+     remove the corner pixels, and the 1px border is drawn on them, so the notch
+     would have a transparent gap and the plate would appear to leak. */
+  .plate { position: relative; background-color: var(--surface); }
+  .plate::before {
+    content: '';
+    position: absolute; inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(225deg,
+      transparent var(--notch),
+      var(--border) var(--notch),
+      var(--border) calc(var(--notch) + 1px),
+      transparent calc(var(--notch) + 1px));
+  }
+
+  /* ── masthead ─────────────────────────────────────────────────────────── */
+  .masthead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--sp-4, 16px);
+    justify-content: space-between;
+    padding: 28px 0 22px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .wordmark {
+    font: 700 1.0625rem/1 var(--font-cond);
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+  .masthead nav { display: flex; gap: 22px; }
+  .masthead nav a {
+    color: var(--muted);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    padding-bottom: 2px;
+    transition: color 140ms ease, border-color 140ms ease;
+  }
+  .masthead nav a:hover, .masthead nav a:focus-visible { color: var(--accent); border-bottom-color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  /* ── hero ─────────────────────────────────────────────────────────────── */
+  .hero {
+    display: grid;
+    gap: clamp(32px, 5vw, 56px);
+    grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+    align-items: start;
+    padding: clamp(40px, 7vw, 84px) 0 0;
+  }
+  .kicker { display: flex; align-items: center; gap: 10px; margin: 0 0 20px; }
+  .kicker::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, var(--border-str), transparent);
+  }
+
+  h1 {
+    font: 300 clamp(2.5rem, 6.2vw, 4.25rem)/1.02 var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin: 0 0 20px;
+    text-wrap: balance;
+  }
+  /* The one place the serif is allowed to be loud. Newsreader carries the human
+     claim; everything factual on this page is mono. */
+  h1 em {
+    font-style: italic;
+    font-weight: 500;
+    color: var(--accent);
+  }
+  .lede {
+    font: 300 clamp(1.0625rem, 1.5vw, 1.1875rem)/1.62 var(--font-display);
+    color: var(--body);
+    max-width: 46ch;
+    margin: 0 0 30px;
+  }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    min-height: 44px;                     /* 2.5.8 target size */
+    padding: 0 20px;
+    border: 1px solid var(--border-str);
+    border-radius: 3px;
+    background: var(--surface);
+    color: var(--text);
+    font: 600 0.8125rem/1 var(--font-cond);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-decoration: none;
+    transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+  }
+  .btn:hover { background: var(--alt); border-color: var(--accent); transform: translateY(-1px); }
+  .btn--go { background: var(--accent); border-color: var(--accent); color: var(--page); }
+  .btn--go:hover { background: hsl(211 90% 80%); }
+
+  /* ── the live readout ─────────────────────────────────────────────────── */
+  .readout {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 1px 0 hsl(210 50% 70% / 0.05), 0 10px 30px -14px hsl(0 0% 0% / 0.7);
+  }
+  .readout-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--sunken);
+    border-radius: 3px 3px 0 0;
+  }
+  .lamp {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--muted);
+  }
+  .lamp::before {
+    content: '';
+    width: 6px; height: 6px;
+    border-radius: 999px;
+    background: var(--faint);
+  }
+  .lamp[data-state='live']::before { background: hsl(150 62% 45%); }
+  .lamp[data-state='down']::before { background: hsl(8 76% 52%); }
+  /* The service answered but reported nothing. Amber, not green and not red: the
+     API is up (so `down` would libel it) and there is no reading to be fresh (so
+     `live` would libel us). The distinction is the whole point of the page, so it
+     gets its own state rather than being rounded to one of the existing two. */
+  .lamp[data-state='none']::before { background: hsl(38 82% 52%); }
+
+  .readout-body { padding: 22px 20px 20px; }
+  .big {
+    display: inline-block;
+    font: 400 clamp(3.75rem, 9vw, 5.5rem)/0.94 var(--font-num);
+    letter-spacing: -0.03em;             /* large mono overhangs untracked */
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  /* The gauge scale. An empty pseudo-element, so it exposes nothing to the
+     accessibility tree; the dashes below it are the honest part. */
+  .big::after {
+    content: '';
+    display: block;
+    height: 7px;
+    margin-top: 10px;
+    background-image: repeating-linear-gradient(to right,
+      var(--border-str) 0 1px, transparent 1px var(--tick-pitch));
+    mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
+  }
+  .cond {
+    margin: 14px 0 0;
+    font: 600 0.9375rem/1.3 var(--font-cond);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--temp-high);
+  }
+  .place { margin: 4px 0 0; color: var(--muted); font: 400 0.8125rem/1.4 var(--font-num); }
+
+  /* The secondary readouts. `min-height` holds the row height so a dash never
+     shifts the plate — the same reason .hour-col reserves its empty slots. */
+  .sec {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    margin: 20px 0 0;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .sec > div { background: var(--surface); padding: 10px 12px; min-height: 56px; }
+  .sec dt { margin: 0 0 5px; }
+  .sec dd {
+    margin: 0;
+    font: 500 0.9375rem/1.25 var(--font-num);
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .sec dd small { font-size: 0.6875rem; color: var(--faint); margin-left: 2px; }
+  /* The compass point is a measurement, not a unit, so it is set at the cell's
+     own size in the muted ink and separated by a gap. Styled like `.sec dd small`
+     it read as leftover unit trivia hanging off the end of the speed. */
+  .sec dd .dir {
+    margin-left: 7px;
+    font: 500 0.75rem/1 var(--font-cond);
+    letter-spacing: var(--track-label);
+    color: var(--muted);
+  }
+  /* A dash is the honest rendering of an absent reading. It is dimmed, and it
+     is never replaced with a zero. */
+  .sec dd.none, .big.none { color: var(--faint); }
+
+  .provenance {
+    margin: 14px 0 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--rule);
+    color: var(--faint);
+    font: 400 0.6875rem/1.5 var(--font-num);
+  }
+
+  /* ── spec plate ───────────────────────────────────────────────────────── */
+  .spec { margin-top: clamp(56px, 9vw, 104px); }
+  .spec-head {
+    display: flex; align-items: center; gap: 10px;
+    margin: 0 0 18px;
+  }
+  .spec-head::after {
+    content: ''; flex: 1; height: 1px;
+    background: linear-gradient(to right, var(--border-str), transparent);
+  }
+  .spec dl {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(228px, 1fr));
+    gap: 0;
+    margin: 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .spec dl > div {
+    padding: 18px 20px;
+    border-right: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+  .spec dt { margin: 0 0 9px; }
+  .spec dd {
+    margin: 0;
+    font: 400 0.875rem/1.55 var(--font-num);
+    color: var(--text);
+  }
+  .spec dd em { font-style: normal; color: var(--muted); }
+
+  footer {
+    margin-top: clamp(48px, 8vw, 88px);
+    padding-top: 20px;
+    border-top: 1px solid var(--rule);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 26px;
+    justify-content: space-between;
+    color: var(--faint);
+  }
+  footer a { color: var(--muted); }
+
+  /* ── motion ─────────────────────────────────────────────────────────────
+     Gated at the source, not cancelled afterwards: an animation that is
+     declared and then neutralised still costs a style recalculation. */
+  @media (prefers-reduced-motion: no-preference) {
+    @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    @keyframes draw { from { stroke-dashoffset: 188.5; } to { stroke-dashoffset: 0; } }
+    @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .reveal { animation: rise 560ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards; }
+    .d1 { animation-delay: 40ms; }  .d2 { animation-delay: 110ms; }
+    .d3 { animation-delay: 180ms; } .d4 { animation-delay: 250ms; }
+    .d5 { animation-delay: 320ms; } .d6 { animation-delay: 390ms; }
+    /* Six iterations, then it stops — the same correction the app's lamp got.
+   * `infinite` is a 2.2.2 failure, not a stylistic one: motion lasting more than
+   * five seconds needs a mechanism to pause, stop or hide it, and this had none.
+   * The app's `.data-source` lamp is the identical semantic state and was already
+   * changed; leaving this one running was an oversight, and a worse one here,
+   * because this page's whole argument is honesty about state. The state is
+   * carried by the words beside the lamp, so nothing depends on it continuing. */
+  .lamp[data-state='live']::before { animation: breathe 2.4s ease-in-out 700ms 6; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+     /* `animation-delay` too, and this clause is the one that makes the block
+        * mean anything. `animation-fill-mode: backwards` paints the FIRST frame
+        * during the delay, so zeroing only the duration left `.d6` — the whole
+        * Specification section — invisible for 390ms, and the 7th daily range bar
+        * invisible for 240ms, for exactly the readers who asked for less motion.
+        * The motions are gated at source (§3.9), so this is a belt to that
+        * braces: it also catches anything added later without the gate. */
+     animation-delay: 0s !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* ── responsive ───────────────────────────────────────────────────────── */
+  @media (max-width: 900px) {
+    .hero { grid-template-columns: minmax(0, 1fr); }
+    .spec dl > div { border-right: 0; }
+  }
+  @media (max-width: 520px) {
+    .sec { grid-template-columns: minmax(0, 1fr); }
+    .masthead nav { gap: 16px; }
+  }
+
+  @media print {
+    /* A landing page has almost nothing to print, and the grain is not worth a
+       cartridge. But "strip the atmosphere" is HALF the job, and the version
+       that shipped here did only that half: it set the background to white and
+       left every foreground token on its dark-theme value. The result was a
+       printed page with --text at 1.12:1, --muted at 2.96:1 and --accent at
+       2.28:1 — a blank sheet, on the one artefact a reader is most likely to
+       carry around. The comment claimed it did "exactly as the app's print block
+       does", and the app's block spends forty lines on the half that was missing
+       here.
+       *
+       * So: re-solve the ink against paper, and take the neutrals from the app's
+       * own print block rather than inventing a second set that could be wrong in
+       * a different way. Every value below is verified in the contrast table in
+       * the spec; the accents are darkened, because a light blue and a light
+       * orange are the two that fail hardest the moment the ground goes white. */
+    :root {
+      --page: #fff;
+      --surface: #fff;
+      --sunken: #f2f5f8;
+      --alt: #fafbfc;
+      --border: #ccc;
+      --border-str: #999;
+      --rule: #ddd;
+
+      --text: #000;        /* 21:1  on #fff */
+      --body: #333;        /* 12.6:1 */
+      --muted: #555;       /* 7.4:1  */
+      --faint: #65707f;    /* 5.0:1  */
+
+      /* The dark-theme accents are 1.9-3.4:1 on paper. These are the same hues
+         carried down until they clear 4.5:1, which is the point at which colour
+         stops being the only thing distinguishing them. */
+      --accent: #1a5fb4;        /* 6.3:1  */
+      --accent-deep: #ebf3fc;   /* a fill, not ink */
+      --temp-high: #a33c00;     /* 6.6:1  */
+      --temp-low: #0b5a8a;      /* 7.4:1  */
+      --precip: #0a6a8a;        /* 6.1:1  */
+
+      /* Atmosphere is gone for the same reason it is gone in the app: it is
+         decoration, and on paper it is a cartridge. */
+      --grid-line: transparent;
+      --mesh-1: transparent;
+      --mesh-2: transparent;
+      --mesh-3: transparent;
+      --grain: none;
+    }
+    body::before { display: none; }
+    .readout, .spec dl { box-shadow: none; }
+    /* The bezel and the panel fills are what make the page legible as a page;
+       on paper they are just grey. */
+    .masthead, .btn { box-shadow: none; }
+  }
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+  <header class="masthead reveal d1">
+    <div class="wordmark">Nimbus</div>
+    <nav aria-label="Primary">
+      <a href="index.html">Open the forecast</a>
+      <a href="#spec">Specification</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div>
+        <p class="eng kicker reveal d2">A forecast instrument</p>
+        <h1 class="reveal d3">It shows you <em>what it doesn't know.</em></h1>
+        <p class="lede reveal d4">
+          Most weather apps fill every cell. When a reading is missing they put a
+          zero in it — a UV index of 0.0, a visibility of 10&nbsp;km, a sunrise at
+          solar noon, a sub-zero low on a day forecast to stay above freezing.
+          Nimbus renders absence as an em dash, and the instrument tells you which
+          is which.
+        </p>
+        <div class="cta reveal d5">
+          <a class="btn btn--go" href="index.html">Open the forecast →</a>
+          <a class="btn" href="#spec">Read the spec</a>
+        </div>
+      </div>
+
+      <!-- The live plate. If the API is unreachable it says so and shows nothing
+           rather than displaying a plausible-looking sample — which would be the
+           exact failure the product exists to avoid. -->
+      <section class="readout plate reveal d4" aria-labelledby="ro-head">
+        <div class="readout-head">
+          <h2 class="eng" id="ro-head">Live readout</h2>
+          <!-- role="status", and the reasoning, because this one was a judgement
+               call and the next reader will want to re-open it.
+
+               This region was entirely silent to assistive technology: no live
+               region, no role, no alert. The lamp's move from `connecting` to
+               `live` / `api offline` / `nothing reported` was invisible to a
+               reader who never navigated to it, and 4.1.3 asks for a status
+               message to be programmatically determinable.
+
+               It was previously left unannounced deliberately, to keep the page
+               free of live regions. That was the wrong call here specifically:
+               the whole argument of the landing page is that this product tells
+               you what it does not know, so a reader who is never told the API is
+               down gets a page that silently fails at the one thing it exists to
+               demonstrate. The price is one polite region on a page that makes no
+               other announcement, and `index.html` already uses role="status", so
+               this removes a two-pattern inconsistency rather than adding one.
+
+               `aria-live` is stated explicitly as well as by role: they are
+               separate attributes and readers differ in how they infer one from
+               the other. Nothing here is a focus target and nothing steals
+               focus — the fetch resolves without touching `document.activeElement`. -->
+          <span class="eng lamp" id="lamp" data-state="pending" role="status" aria-live="polite">connecting</span>
+        </div>
+        <div class="readout-body">
+          <p class="big" id="temp">—</p>
+          <p class="cond" id="cond">Awaiting the instrument</p>
+          <p class="place" id="place">—</p>
+
+          <dl class="sec">
+            <div><dt class="eng">Wind</dt><dd id="r-wind">—</dd></div>
+            <div><dt class="eng">Humidity</dt><dd id="r-hum">—</dd></div>
+            <div><dt class="eng">Pressure</dt><dd id="r-pres">—</dd></div>
+            <div><dt class="eng">Visibility</dt><dd id="r-vis">—</dd></div>
+            <div><dt class="eng">UV index</dt><dd id="r-uv">—</dd></div>
+            <div><dt class="eng">Cloud cover</dt><dd id="r-cloud">—</dd></div>
+          </dl>
+
+          <p class="provenance" id="prov">Source pending.</p>
+        </div>
+      </section>
+    </section>
+
+    <section class="spec reveal d6" id="spec" aria-labelledby="spec-h">
+      <h2 class="eng spec-head" id="spec-h">Specification</h2>
+      <dl>
+        <div>
+          <dt class="eng">Provider</dt>
+          <dd>OpenWeatherMap <em>/data/2.5</em></dd>
+        </div>
+        <div>
+          <dt class="eng">Coverage</dt>
+          <dd>16 h hourly · 5–6 d daily</dd>
+        </div>
+        <div>
+          <dt class="eng">Refresh</dt>
+          <dd>10 min, silent on poll</dd>
+        </div>
+        <div>
+          <dt class="eng">Type</dt>
+          <dd>IBM Plex Mono <em>every number</em></dd>
+        </div>
+        <div>
+          <dt class="eng">Contract</dt>
+          <dd>Zod, <em>nullable where absent</em></dd>
+        </div>
+        <div>
+          <dt class="eng">Accessibility</dt>
+          <dd>WCAG 2.2 AA · worst pair 4.53:1</dd>
+        </div>
+      </dl>
+    </section>
+  </main>
+
+  <footer>
+    <span class="eng">Nimbus Weather · local preview</span>
+    <span class="eng">Design spec: <a href="../docs/design/weather-ui-spec.md">docs/design/weather-ui-spec.md</a></span>
+  </footer>
+</div>
+
+<script>
+/* Minimal, and honest about failure.
+ *
+ * The page works without JavaScript — every value simply stays an em dash,
+ * which is exactly what the product renders for a reading it does not have. The
+ * script's only job is to replace dashes with real numbers when the local API is
+ * up, and to say plainly when it is not.
+ *
+ * Every getter is `== null` rather than truthiness. A genuine 0 is a
+ * measurement: 0 hPa, 0 %, 0 km and UV 0 all occur in production and must render
+ * as a figure, not as a dash. */
+(() => {
+  const API = 'http://127.0.0.1:4000/v1';
+  const $ = (id) => document.getElementById(id);
+  const DASH = '—';
+
+  /* `null`/`undefined` -> the dash. `0` -> "0". That distinction is the whole
+     product, so it lives in one function rather than six inline ternaries. */
+  const put = (id, value, suffix, tail) => {
+    const el = $(id);
+    if (!el) return;
+    if (value == null) { el.textContent = DASH; el.classList.add('none'); return; }
+    el.classList.remove('none');
+    el.textContent = String(value);
+    /* The unit is a real <small> element, not a tag spliced into a string.
+     * `textContent` does not parse markup, so splicing one printed the literal
+     * characters — `80<small>%</small>` in six cells of the readout at once, and
+     * a stray `<small>km/h</small>` beside the speed. Building the node is also
+     * the injection-proof way round: there is no innerHTML here, so nothing a
+     * provider returned can reach the DOM as markup however the value was
+     * derived. */
+    if (suffix) {
+      const unit = el.ownerDocument.createElement('small');
+      unit.textContent = suffix;
+      el.appendChild(unit);
+    }
+    /* A second, non-unit reading in the same cell. It is a sibling rather than
+     * more suffix text because a compass point is a measurement: folded into
+     * the suffix it inherited the 0.6875rem faint unit styling, which demoted a
+     * real value to a piece of unit trivia. */
+    if (tail) {
+      const t = el.ownerDocument.createElement('span');
+      t.className = 'dir';
+      t.textContent = tail;
+      el.appendChild(t);
+    }
+  };
+  const text = (id, value) => { const el = $(id); if (el) el.textContent = value; };
+
+  const down = (why) => {
+    const lamp = $('lamp');
+    if (lamp) { lamp.dataset.state = 'down'; lamp.textContent = 'api offline'; }
+    text('cond', 'The instrument is offline');
+    text('place', why);
+    const p = $('prov');
+    if (p) p.textContent = 'No reading is available, so none is shown. Start the API: npm run local:api';
+  };
+
+  /* A city that exercises the honest-dash path on purpose: the free provider
+     tier reports no UV index and no dew point at all, so those cells are
+     genuinely blank for every location, everywhere. */
+  const LAT = 28.6139, LON = 77.2090;
+
+  const load = async () => {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 4000);
+    try {
+      const res = await fetch(`${API}/weather/bundle?lat=${LAT}&lon=${LON}`, { signal: ctl.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      /* Read the envelope without destructuring it. `const { data } = await
+       * res.json()` threw on a body of `{}`, and that throw landed in the catch
+       * and reported "api offline" — for a service that had just answered 200.
+       * The two are different facts and the lamp distinguishes them. */
+      const body = await res.json();
+      const data = body?.data;
+      clearTimeout(timer);
+
+      const c = data?.current || {};
+      const lamp = $('lamp');
+      /* `live` is a claim about the freshness of a NUMBER, so it may only be made
+       * when there is a number. A response that carries no current reading — an
+       * empty body, a proxy returning `{}`, a server a version ahead of the
+       * contract this page was written against — answers 200 with nothing in it,
+       * and calling that "live" sets a green lamp over six dashes. That is the
+       * single claim this page must never make. `api offline` would be the other
+       * falsehood: the service is plainly up, it simply said nothing. */
+      const hasReading = c.temperature != null;
+      if (lamp) {
+        if (hasReading) { lamp.dataset.state = 'live'; lamp.textContent = 'live'; }
+        else { lamp.dataset.state = 'none'; lamp.textContent = 'nothing reported'; }
+      }
+
+      const t = $('temp');
+      if (c.temperature == null) { if (t) t.textContent = DASH; if (t) t.classList.add('none'); }
+      else { if (t) { t.classList.remove('none'); t.textContent = `${Math.round(c.temperature)}°`; } }
+
+      text('cond', c.conditionText || c.condition || DASH);
+      text('place', data?.location
+        ? `${data.location.name} · ${data.location.timezone || ''}`
+        : DASH);
+
+      /* Speed and bearing are separate fields and either can be absent. When the
+       * speed is missing the cell is a bare dash: a lone `NE` under a heading of
+       * "Wind" reads as a wind speed, and a dash already means the provider did
+       * not report this cell. Losing a bearing we do have is the smaller lie. */
+      put('r-wind',
+        c.windSpeed == null ? null : Math.round(c.windSpeed),
+        'km/h',
+        c.windDirection == null ? null : compass(c.windDirection));
+      put('r-hum', c.humidity == null ? null : c.humidity, '%');
+      put('r-pres', c.pressure == null ? null : Math.round(c.pressure), 'hPa');
+      put('r-vis', c.visibility == null ? null : c.visibility, 'km');
+      /* The free tier sends no UV reading, ever. This cell is a dash because the
+         data does not exist — not because it is zero. */
+      put('r-uv', c.uvIndex == null ? null : c.uvIndex.toFixed(1), '');
+      put('r-cloud', c.cloudCoverage == null ? null : c.cloudCoverage, '%');
+
+      text('prov', `${data?.daily ? data.daily.length : 0}-day forecast · `
+        + `${data?.hourly ? data.hourly.length : 0} hourly slots · `
+        + 'a dash means the provider did not report it');
+    } catch (err) {
+      clearTimeout(timer);
+      down(err && err.name === 'AbortError'
+        ? 'The API did not answer in 4s.'
+        : 'The API at 127.0.0.1:4000 is not reachable.');
+    }
+  };
+
+  function compass(deg) {
+    const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    return dirs[Math.round(deg / 45) % 8] || '';
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
+  else load();
+})();
+</script>
+</body>
+</html>

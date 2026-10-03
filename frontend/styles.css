@@ -1,0 +1,2471 @@
+﻿/* ═══════════════════════════════════════════════════════════════════════════
+   NIMBUS WEATHER — an instrument panel that happens to be a forecast page.
+
+   The direction is a machined instrument, not a magazine: Plex Sans carries
+   language, Plex Mono carries every number, panels get a chamfered bezel, the
+   hero temperature is built as a gauge readout with a calibration scale under
+   it, and the page sits on drafting paper — a hairline grid, three washes and a
+   grain, all painted BEHIND content so they cannot erode a solved text pair.
+
+   Density is not decoration here; it is the product. Everything that looks
+   structural is load-bearing: the fixed-track grids, the tabular figures, the
+   tick pitch. Implements docs/design/weather-ui-spec.md. Tokens are --nw-*.
+   Light is the default; .theme-dark is a reader theme, not a showcase theme.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── §2.1 Light theme (default) ─────────────────────────────────────────── */
+:root {
+  /* ── Surfaces ─────────────────────────────────────────────── */
+  --nw-page:           hsl(210 32% 97%);
+  --nw-surface:        hsl(0 0% 100%);
+  --nw-surface-sunken: hsl(210 28% 96%);
+  --nw-surface-alt:    hsl(210 30% 98.5%);
+  --nw-header:         hsl(211 40% 99%);
+
+  /* ── Lines ────────────────────────────────────────────────── */
+  --nw-border:         hsl(214 22% 87%);
+  --nw-border-strong:  hsl(214 18% 74%);
+  /* Input borders only: solved to 3:1 on --nw-surface so an authored border
+   * is identifiable. Distinct from --nw-border-strong, which is a decorative
+   * hairline and is tuned to sit quietly at ~1.9:1. */
+  --nw-border-input:   hsl(214 20% 57.5%);
+  --nw-rule:           hsl(214 24% 91%);
+
+  /* ── Ink ──────────────────────────────────────────────────── */
+  --nw-text:           hsl(215 34% 13%);
+  --nw-text-body:      hsl(215 16% 32%);
+  --nw-text-muted:     hsl(215 13% 38.9%);
+  /* Muted and faint are the only ink in this file that reaches the COMPOSITED
+     page ground rather than a panel. `.section-meta`, `.h-section-title`,
+     `.current-generated`, `.insight-evidence li`, `.map-caption` and
+     `.fact-label` all sit outside `.panel`, so their background is `--nw-page`
+     + three mesh washes + the 4px grid + the SVG grain — a ground that MOVES
+     across the page and is never `#fff`.
+
+     Measured, not modelled: the darkest ground pixel over ten viewports is
+     rgb(225,229,234). The two old values PASSED on `#fff` — faint 5.03:1, muted
+     5.18:1 — and FAILED on the ground they actually sit on: faint 3.98:1, muted
+     4.09:1. That gap is the entire defect. It is invisible to any check that
+     assumes a white background, which is what the spec did and what the comment
+     this replaces claimed at "47.7% for 4.54:1" while the declaration directly
+     above it said 44.6%. Each ratio above is stated against the ground it was
+     measured on; do not move one without moving its partner.
+
+     Solved for >= 4.6:1 on rgb(225,229,234): muted 4.97:1, faint 4.61:1. The
+     4.6 margin matches the severity inks below, so one bar covers the file.
+     The 1.85-point gap is deliberate and narrow: these two are near-neighbours
+     by design and the hierarchy between them is carried by weight, case and
+     size, not by lightness. Body copy at 32% stays clearly a step above. */
+  --nw-text-faint:     hsl(215 11% 40.75%);
+  --nw-text-invert:    hsl(0 0% 100%);
+
+  /* ── Brand / interactive ──────────────────────────────────── */
+  --nw-accent:         hsl(211 74% 43%);
+  --nw-accent-hover:   hsl(211 74% 36%);
+  --nw-accent-soft:    hsl(211 70% 95.5%);
+  --nw-accent-line:    hsl(211 60% 78%);
+  --nw-focus:          hsl(211 82% 45%);
+  --nw-focus-ring:     0 0 0 2px var(--nw-page), 0 0 0 4px var(--nw-focus);
+
+  /* ── Temperature encoding ──────────────────────────────────────
+     Lightness adjusted from the spec's values so every one of these clears
+     4.5:1 on --nw-surface, as §9.2.10 requires. Hue/sat unchanged. */
+  --nw-temp-high:      hsl(22 84% 39.5%);
+  --nw-temp-low:       hsl(203 62% 42%);
+  --nw-temp-track:     hsl(210 24% 90%);
+
+  /* ── Precipitation ────────────────────────────────────────── */
+  --nw-precip:         hsl(199 84% 35.4%);
+  --nw-precip-soft:    hsl(199 84% 93%);
+
+  /* ── UV index ─────────────────────────────────────────────────
+     The spec's own note that `hsl(48 90% 40%)` is 4.6:1 is wrong: it measures
+     2.59:1 on white. Lightness is solved per band for >= 4.5:1 instead. */
+  --nw-uv-low:         hsl(150 58% 31.3%);
+  --nw-uv-moderate:    hsl(48 90% 27.6%);
+  --nw-uv-high:        hsl(28 90% 36%);
+  --nw-uv-very-high:   hsl(354 72% 48%);
+  --nw-uv-extreme:     hsl(283 55% 46%);
+
+  /* ── Air quality (§2.3, theme-independent scales, two blocks) ──
+     Solved for >= 4.5:1 on the surface each band actually reaches, which is
+     NOT always `--nw-surface`. `.daily-aqi` is 11px/600 text that lands on
+     `--nw-surface-alt` (#fafbfc) on every odd `.daily-row`. Solved on white,
+     `moderate` and `unhealthy_sensitive` both passed (4.54:1, 4.52:1) and both
+     failed on the zebra at 4.38:1 and 4.36:1 — and the print block had already
+     diagnosed exactly those two numbers and patched the PRINT case only, so
+     screen was the un-fixed twin of a bug this file knew about. Both are now
+     solved on the zebra: 4.60:1 and 4.61:1, and still 4.77:1 on white. The
+     other four bands already cleared it there and are untouched. */
+  --nw-aqi-good:                 hsl(150 62% 32%);
+  --nw-aqi-moderate:             hsl(43 92% 30.25%);
+  --nw-aqi-unhealthy-sensitive:  hsl(24 90% 39.25%);
+  --nw-aqi-unhealthy:            hsl(2 74% 50%);
+  --nw-aqi-very-unhealthy:       hsl(318 60% 44%);
+  --nw-aqi-hazardous:            hsl(283 56% 48%);
+
+  /* ── Alert severity ───────────────────────────────────────── */
+  /* Severity ink, solved against the ALERT BAND rather than the bare page.
+   *
+   * The band is `--nw-page` + `--nw-sev-tint` + the three mesh washes, so the
+   * ground under these words is not the page colour. Solving against
+   * `--nw-page` alone is the mistake the spec's own contrast section used to
+   * make: it puts these four at 4.60-5.99:1 on the page while the composited
+   * band runs rgb(222,234,244) to rgb(245,248,250), and the darkest end of that
+   * range drops `severe` to 4.03:1 — a "Severe" badge failing 1.4.3.
+   *
+   * Measured as the WORST of the band's range rather than a single point,
+   * because the washes are radial and the ground moves across the page. The
+   * four values below are the smallest change from the originals that clears
+   * 4.6:1 at both ends, so the answer does not depend on how faithfully anyone
+   * models the wash geometry. */
+  --nw-sev-minor:     hsl(214 18% 42.1%);
+  --nw-sev-moderate:  hsl(43 92% 27.2%);
+  --nw-sev-severe:    hsl(8 76% 42.8%);
+  --nw-sev-extreme:   hsl(283 60% 45%);
+  --nw-sev-tint:      hsl(0 0% 100% / 0.04);
+
+  /* ── §3.1 Type ──────────────────────────────────────────────────
+     Three cuts, and the split is the point. Plex Sans carries language; Plex
+     Mono carries every number. A monospace figure is inherently tabular, so the
+     alignment the hourly strip, the daily table and the details grid all depend
+     on is structural — there is no font feature to lose. Plex Sans Condensed is
+     the third cut because the technical labels on this page are letterspaced,
+     and letterspacing adds width; the condensed cut buys that back and is what
+     lets a label like "CHANCE OF PRECIPITATION" fit a 58px column.
+
+     `--nw-track-label` is the letterspacing the instrument register calls for.
+     It is applied to LABELS ONLY, never to a MEASUREMENT: tracking a figure
+     breaks the very alignment mono is there to provide. The one tracked thing
+     that contains digits is `.aqi-comp-name`, which renders the chemical
+     formulae `PM2.5` and `PM10` — names, not readings. The values beneath them
+     are mono with `tabular-nums`, so the column that has to align still does.
+     This used to say "never to a number" with that exception undocumented, and a
+     "never" with a hidden exemption is a statement the next reader will enforce
+     by deleting the rule that makes it true. */
+  --nw-font:      'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --nw-font-cond: 'IBM Plex Sans Condensed', 'IBM Plex Sans', system-ui, sans-serif;
+  --nw-font-num:  'IBM Plex Mono', ui-monospace, 'SF Mono', 'Cascadia Mono', monospace;
+
+  --nw-track-label: 0.09em;
+  --nw-track-micro: 0.14em;
+  --nw-track-read:  -0.02em;   /* the hero readout; large mono needs pulling in */
+
+  --nw-text-display: clamp(4.25rem, 11vw, 8rem);
+  --nw-text-h1:      1.5rem;
+  --nw-text-h2:      0.875rem;
+  --nw-text-h3:      1.0625rem;
+  --nw-font-body:    0.9375rem;
+  --nw-text-sm:      0.8125rem;
+  --nw-text-xs:      0.6875rem;
+  --nw-text-label:   0.6875rem;
+
+  --nw-lh-tight: 1;
+  --nw-lh-snug:  1.2;
+  --nw-lh-body:  1.5;
+
+  /* ── §3.2 Spacing ─────────────────────────────────────────── */
+  --nw-1:  2px;   --nw-2:  4px;   --nw-3:  8px;   --nw-4:  12px;
+  --nw-5:  16px;  --nw-6:  20px;  --nw-7:  24px;  --nw-8:  32px;
+  --nw-9:  40px;  --nw-10: 56px;  --nw-11: 72px;
+
+  /* ── §3.3 Radius ──────────────────────────────────────────── */
+  --nw-r-xs:   2px;
+  --nw-r-sm:   3px;
+  --nw-r-md:   4px;
+  --nw-r-lg:   6px;
+  --nw-r-pill: 999px;
+
+  /* ── §3.4 Elevation ───────────────────────────────────────── */
+  --nw-elev-0: none;
+  --nw-elev-1: 0 1px 2px hsl(215 30% 20% / 0.06);
+  --nw-elev-2: 0 6px 24px hsl(215 30% 20% / 0.12);
+  /* A plate on a desk casts a tight contact shadow AND a soft ambient one. Two
+   * layers, not one: the 1px offset is the contact, the blur is the room. */
+  --nw-shadow-card:
+    0 1px 2px hsl(215 30% 20% / 0.05),
+    0 8px 24px -12px hsl(215 30% 25% / 0.14);
+  /* The panel's top inner highlight — the plate catching light. Painted as a
+   * background-image so it is behind the text by construction. On a white
+   * surface a white sheen is a near no-op, which is correct: in the light theme
+   * the instrument reads through the chamfer and the tick rules, not the sheen. */
+  --nw-sheen: hsl(0 0% 100% / 0.6);
+
+  /* ── §3.5 Layout ──────────────────────────────────────────── */
+  --nw-container:    1280px;
+  --nw-gutter:       var(--nw-7);
+  --nw-section-gap:  var(--nw-9);
+  --nw-hour-col-w:   58px;
+  /* Sparkline gutters. Must match HOUR_GUTTER_L / HOUR_GUTTER_R in app.js. */
+  --nw-hour-gutter-l: 26px;
+  --nw-hour-gutter-r: 12px;
+
+  /* ── §3.6 Atmosphere ─────────────────────────────────────────────
+     All of these sit BEHIND content. `--nw-grain` is an inline SVG
+     `feTurbulence` tile rather than a request: it is 400 bytes, needs no
+     network, cannot 404, and the alpha is baked into `feColorMatrix` so one
+     token controls it in both themes.
+
+     The three mesh washes are the only place a near-white page is allowed to
+     stop being flat. Kept at 1-3% alpha — enough to catch light, far too little
+     to read as a gradient.
+     
+     The removed clause used to read "far too little to touch any text pair". It
+     was false, and it was load-bearing: it is why `--nw-text-muted` and
+     `--nw-text-faint` were solved against white instead of against the ground
+     they actually sit on, and why they shipped at 4.09:1 and 3.98:1 where the
+     composite runs. Against the composited ground the three washes plus the grid
+     hairline move the light-theme page from rgb(245,247,250) to rgb(225,229,234)
+     — enough to drop a 4.5:1 pair to 4.0:1. A wash too faint to be SEEN changing
+     a 4.5:1 pair can still break one. */
+  --nw-grid-pitch:   4px;
+  --nw-grid-line:    hsl(215 30% 30% / 0.028);
+  --nw-mesh-1:       hsl(211 74% 52% / 0.05);
+  --nw-mesh-2:       hsl(199 84% 48% / 0.04);
+  --nw-mesh-3:       hsl(215 40% 40% / 0.035);
+  --nw-grain-opacity: 0.5;
+  --nw-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='0.055'/%3E%3C/svg%3E");
+  /* Gauge tick pitch under the hero readout. */
+  --nw-tick-pitch: 8px;
+  /* Panel corner notch — the registration cut on an instrument bezel. */
+  --nw-notch: 7px;
+  /* Per-item step for the staggered panel reveal. 40ms: long enough to read as a
+   * sequence, short enough that the last panel is not noticeably late. */
+  --nw-reveal-step: 40ms;
+}
+
+/* ─── §2.2 Dark theme (single override block) ─────────────────────────────── */
+.theme-dark {
+  --nw-page:           hsl(216 32% 9%);
+  --nw-surface:        hsl(216 26% 13%);
+  --nw-surface-sunken: hsl(216 28% 11%);
+  --nw-surface-alt:    hsl(216 24% 15%);
+  --nw-header:         hsl(216 28% 11%);
+
+  --nw-border:         hsl(215 20% 22%);
+  --nw-border-strong:  hsl(215 16% 36%);
+  --nw-border-input:   hsl(215 14% 44.7%);
+  --nw-rule:           hsl(215 20% 19%);
+
+  /* Dark needs the atmosphere turned UP, not down. A wash at 4% alpha on a near
+   * black page is invisible; on white it was already 4%. These are roughly
+   * double the light values, and the grid lines go warm rather than neutral so
+   * the panel glass reads as lit from above. The grain goes brighter and
+   * lower-opacity: on black, a light speckle at 5% is visible texture, whereas
+   * the light theme needs the same *perceived* strength. */
+  --nw-grid-line:     hsl(210 40% 80% / 0.030);
+  --nw-mesh-1:        hsl(211 88% 60% / 0.10);
+  --nw-mesh-2:        hsl(199 84% 55% / 0.07);
+  --nw-mesh-3:        hsl(215 60% 50% / 0.07);
+  --nw-grain-opacity: 0.85;
+  /* A white sheen is invisible on a near-black plate — the highlight has to come
+   * from the edge instead, so dark gets a faint light rim instead. */
+  --nw-sheen: hsl(210 60% 80% / 0.05);
+  /* Dark plates float; they need less contact shadow and more ambient lift. */
+  --nw-shadow-card:
+    0 1px 0 hsl(210 50% 70% / 0.05),
+    0 10px 30px -14px hsl(0 0% 0% / 0.7);
+
+  --nw-text:           hsl(210 28% 95%);
+  --nw-text-body:      hsl(212 16% 74%);
+  /* Dark inverts which end of the ground binds: light ink on a near-black page
+     is hurt by the ground getting BRIGHTER, so the worst point is the lightest
+     wash — rgb(32,47,59), measured, not the bare `--nw-page`. faint was 4.07:1
+     there and failed. Both move up; the 3.8-point gap is held from the old 4.0
+     so the pair stays legible as a pair. Lightest ground pixel rgb(32,47,59). */
+  --nw-text-muted:     hsl(214 13% 63.6%);
+  --nw-text-faint:     hsl(215 11% 59.8%);
+  --nw-text-invert:    hsl(216 32% 9%);
+
+  --nw-accent:         hsl(211 88% 70%);
+  --nw-accent-hover:   hsl(211 90% 80%);
+  --nw-accent-soft:    hsl(213 45% 19%);
+  --nw-accent-line:    hsl(212 50% 36%);
+  --nw-focus:          hsl(211 90% 72%);
+
+  --nw-temp-high:      hsl(24 90% 47.7%);
+  --nw-temp-low:       hsl(203 72% 62%);
+  --nw-temp-track:     hsl(215 18% 26%);
+
+  --nw-precip:         hsl(199 84% 44.5%);
+  --nw-precip-soft:    hsl(200 55% 18%);
+
+  --nw-uv-low:         hsl(150 52% 48%);
+  --nw-uv-moderate:    hsl(48 90% 55%);
+  --nw-uv-high:        hsl(28 90% 58%);
+  --nw-uv-very-high:   hsl(354 76% 64%);
+  --nw-uv-extreme:     hsl(283 62% 68%);
+
+  --nw-aqi-good:                 hsl(150 52% 50%);
+  --nw-aqi-moderate:             hsl(43 92% 58%);
+  --nw-aqi-unhealthy-sensitive:  hsl(24 92% 60%);
+  --nw-aqi-unhealthy:            hsl(2 78% 64%);
+  --nw-aqi-very-unhealthy:       hsl(318 68% 66%);
+  --nw-aqi-hazardous:            hsl(283 64% 70%);
+
+  /* Severity is not redefined per theme in the spec, but three of the four
+     light-theme values fail on the dark surface. Lifted for >= 4.5:1. */
+  /* Dark: the band runs rgb(18,35,53) to rgb(12,17,25), and here the LIGHT end
+   * is what binds — text has to be lighter than a background that is itself
+   * lighter than the page. `severe` and `extreme` were at 4.35 and 4.33; the two
+   * that already cleared are left alone rather than churned. Same
+   * worst-of-the-range model as the light theme above. */
+  --nw-sev-minor:     hsl(214 18% 56.5%);
+  --nw-sev-moderate:  hsl(43 92% 36.9%);
+  --nw-sev-severe:    hsl(8 76% 59.9%);
+  --nw-sev-extreme:   hsl(283 60% 63.4%);
+  --nw-sev-tint:      hsl(215 40% 4% / 0.35);
+
+  --nw-shadow-card:   0 1px 2px hsl(216 40% 4% / 0.5);
+  --nw-elev-1:        0 1px 2px hsl(216 40% 4% / 0.4);
+  --nw-elev-2:        0 4px 16px hsl(216 40% 4% / 0.45);
+}
+
+/* ─── Reset & base ───────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  /* `clip` (not `hidden`) so the sticky masthead keeps working while the
+     full-bleed map band still cannot create a horizontal scrollbar. */
+  overflow-x: clip;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+
+/* ─── Atmosphere ───────────────────────────────────────────────────────────
+   Three layers, all painted BEHIND content, which is a deliberate constraint
+   rather than a stylistic one: every text pair on this page has been solved to
+   ≥4.5:1, and a grain or wash laid OVER the text would eat into that margin on
+   every one of them. Behind, the atmosphere is free.
+
+   1. `--nw-mesh-*` — three very low-alpha radial washes. In an instrument this
+      is the panel glass catching room light; on a flat page it stops the
+      background reading as dead #f0f3f7.
+   2. A 4px hairline grid, the drafting-paper substrate the whole layout sits
+      on. `--nw-grid-line` is ~1% alpha, so it is structure, not a pattern.
+   3. `body::before` — one fixed SVG turbulence tile at `--nw-grain-opacity`.
+      Fixed, so it does not scroll, and `pointer-events: none`.
+
+   `body` also needs `isolation: isolate` for the ::before to be its own layer. */
+body {
+  font: 400 var(--nw-font-body)/var(--nw-lh-body) var(--nw-font);
+  color: var(--nw-text);
+  min-height: 100dvh;
+  overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
+  isolation: isolate;
+  background-color: var(--nw-page);
+  background-image:
+    radial-gradient(120% 80% at 12% -10%, var(--nw-mesh-1), transparent 60%),
+    radial-gradient(100% 70% at 92% 4%, var(--nw-mesh-2), transparent 55%),
+    radial-gradient(140% 90% at 50% 108%, var(--nw-mesh-3), transparent 65%),
+    linear-gradient(var(--nw-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--nw-grid-line) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 100% 100%, var(--nw-grid-pitch) var(--nw-grid-pitch), var(--nw-grid-pitch) var(--nw-grid-pitch);
+  background-attachment: fixed, fixed, fixed, fixed, fixed;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--nw-grain-opacity);
+  background-image: var(--nw-grain);
+  background-size: 180px 180px;
+}
+
+a { color: var(--nw-accent); text-decoration: none; }
+a:hover { color: var(--nw-accent-hover); text-decoration: underline; }
+
+button,
+input,
+select { font-family: inherit; font-size: inherit; color: inherit; }
+
+:focus-visible {
+  outline: 2px solid var(--nw-focus);
+  outline-offset: 2px;
+  border-radius: var(--nw-r-xs);
+}
+
+/* Two-tone ring on inputs and the layer switcher (§2.4). */
+input:focus-visible {
+  border-radius: var(--nw-r-sm);
+  box-shadow: var(--nw-focus-ring);
+}
+.map-layer-switch:focus-visible,
+.map-recentre:focus-visible {
+  box-shadow: var(--nw-focus-ring);
+}
+
+/* ─── Utilities ──────────────────────────────────────────────────────────── */
+.hidden { display: none !important; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  top: var(--nw-2);
+  left: var(--nw-2);
+  z-index: 200;
+  transform: translateY(-200%);
+  padding: var(--nw-3) var(--nw-5);
+  background: var(--nw-surface);
+  border: 1px solid var(--nw-accent);
+  border-radius: var(--nw-r-sm);
+  font-weight: 600;
+  font-size: var(--nw-text-sm);
+}
+.skip-link:focus-visible { transform: translateY(0); }
+
+.num {
+  font: 600 var(--nw-text-sm)/var(--nw-lh-snug) var(--nw-font-num);
+  font-variant-numeric: tabular-nums;
+  color: var(--nw-text);
+}
+.unit {
+  font-size: var(--nw-text-xs);
+  font-weight: 500;
+  color: var(--nw-text-faint);
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  border-bottom: 1px solid currentColor;
+  /* Retry is the only control in its paragraph, so the "inline in a sentence"
+   * exception does not apply; `padding: 0` at 13px gave a ~19.5px target. */
+  padding: 4px 0;
+  min-height: 24px;
+  cursor: pointer;
+  color: var(--nw-accent);
+  font-size: var(--nw-text-sm);
+  font-weight: 600;
+}
+.link-btn:hover { color: var(--nw-accent-hover); }
+
+/* Section titles are the instrument's engraved panel labels: condensed,
+   letterspaced, uppercase. Condensed is what makes the tracking affordable —
+   tracking adds width, and the condensed cut takes it straight back. */
+.h-section-title {
+  font: 700 var(--nw-text-h2)/var(--nw-lh-body) var(--nw-font-cond);
+  text-transform: uppercase;
+  letter-spacing: var(--nw-track-label);
+  color: var(--nw-text-muted);
+  white-space: nowrap;
+  gap: var(--nw-2);
+}
+/* The status lamp. `aria-hidden` is achieved by being an empty pseudo-element,
+ * so nothing is announced — the badge's own text already says "Live data". */
+.data-source::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: var(--nw-r-pill);
+  flex: 0 0 auto;
+  background: var(--nw-border-strong);
+}
+.data-source[data-source='live']::before { background: var(--nw-aqi-good); }
+/* Sample data is not a failure, so it is amber rather than red — the same
+ * treatment `--nw-sev-moderate` gets elsewhere. */
+.data-source[data-source='sample']::before { background: var(--nw-sev-moderate); }
+
+.nw-page {
+  max-width: var(--nw-container);
+  margin: 0 auto;
+  padding: 0 var(--nw-gutter) var(--nw-11);
+}
+
+/* ─── Panels & section heads ─────────────────────────────────────────────── */
+/* The bezel.
+ *
+ * A panel is an instrument face, so it gets a machined edge: a chamfered top-left
+ * corner where the "plate" is cut away, drawn as a diagonal hairline that meets
+ * the border exactly at the radius, plus a top inner highlight so the surface
+ * catches light.
+ *
+ * The chamfer is painted with a single linear-gradient on a ::before rather than
+ * a `clip-path` notch. `clip-path` would remove the corner pixels — and the
+ * 1px border is drawn on those pixels, so the notch would have a transparent
+ * gap in it and the panel would appear to leak. A gradient keeps the border
+ * continuous.
+ *
+ * `pointer-events: none` and no text content: it is decoration, and it must not
+ * be reachable or announced. The ::before is empty, so it exposes nothing to the
+ * accessibility tree either way. */
+.panel {
+  /* `background-color` + `background-image`, never the `background` shorthand:
+   * the shorthand would reset background-image and drop the sheen. */
+  background-color: var(--nw-surface);
+  background-image: linear-gradient(to bottom, var(--nw-sheen), transparent 42%);
+  border: 1px solid var(--nw-border);
+  border-radius: var(--nw-r-md);
+  box-shadow: var(--nw-shadow-card);
+  padding: var(--nw-6);
+  position: relative;
+}
+.panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  /* The chamfer ONLY. The sheen used to be here too, and that was a contrast
+   * bug: `.panel::before` is positioned, so it paints in the positioned layer
+   * — ABOVE the panel's own static text — and at 55% white it was washing out
+   * the top 42% of every panel's content. A background-image is behind the text
+   * by construction; a positioned pseudo-element is not. The chamfer is a 1px
+   * line inside the 16px padding, so it cannot reach a glyph. */
+  background: linear-gradient(225deg,
+    transparent var(--nw-notch),
+    var(--nw-border) var(--nw-notch),
+    var(--nw-border) calc(var(--nw-notch) + 1px),
+    transparent calc(var(--nw-notch) + 1px));
+}
+.panel-flush { padding: 0; overflow: hidden; }
+/* `.panel-flush` is (0,1,0), the same as `.panel`. A media query adds NO
+ * specificity, so `.panel { padding: var(--nw-5) }` inside the <=639px block —
+ * later in source — beat this rule at every phone width and the flush modifier
+ * was dead below 640px. That inset the daily table's zebra bands and every
+ * `.daily-row` border 16px inside the panel's own right border, inverting the
+ * edge-to-edge table the modifier exists to produce. (0,2,0) settles it in the
+ * base cascade, once, with no override needed at any breakpoint. */
+.panel.panel-flush { padding: 0; }
+
+.forecast {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nw-section-gap);
+}
+
+/* Section wrappers. The rules are intentionally thin: the flat aesthetic is
+   carried by the 1px rules on .section-head and the panels themselves. */
+.section-hourly,
+.section-daily,
+.section-map,
+.section-details,
+.section-air-quality,
+.section-astronomy { min-width: 0; }
+.insights { min-width: 0; }
+.insight-body { min-width: 0; }
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--nw-4);
+  border-bottom: 1px solid var(--nw-rule);
+  padding-bottom: var(--nw-3);
+  margin-bottom: var(--nw-5);
+}
+.section-meta {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nw-3);
+  font: 500 var(--nw-text-xs)/var(--nw-lh-snug) var(--nw-font);
+  font-variant-numeric: tabular-nums;
+  color: var(--nw-text-faint);
+  text-align: right;
+}
+
+/* ─── Masthead ───────────────────────────────────────────────────────────── */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: var(--nw-5);
+  min-height: 56px;
+  /* The header is a direct child of <body>, so it got no column constraint and
+   * sat outside the page column at any viewport above 1280px — 80px adrift at
+   * 1440, 320px at 1920. The background and border stay full-bleed because
+   * they are on this element; only the padding is inset to line the contents up
+   * with `.nw-page`, which centres at --nw-container and pads by --nw-gutter. */
+  padding-block: var(--nw-2);
+  padding-inline: max(
+    var(--nw-gutter),
+    calc((100% - var(--nw-container)) / 2 + var(--nw-gutter))
+  );
+  background: var(--nw-header);
+  border-bottom: 1px solid var(--nw-border);
+}
+.site-header.is-stuck { box-shadow: var(--nw-elev-1); }
+
+.brand {
+  flex: 0 0 auto;
+  min-width: 168px;
+  display: flex;
+  align-items: center;
+  gap: var(--nw-3);
+  color: inherit;
+}
+.brand:hover { text-decoration: none; }
+.brand-icon { color: var(--nw-accent); display: flex; }
+.brand-icon .lucide { width: 20px; height: 20px; stroke-width: 2; }
+.brand-text { display: flex; flex-direction: column; line-height: 1.1; }
+.brand-name {
+  font: 700 var(--nw-text-h1)/var(--nw-lh-tight) var(--nw-font);
+  letter-spacing: -0.02em;
+  color: var(--nw-text);
+}
+.brand-tag {
+  font: 600 7px/1.2 var(--nw-font);
+  letter-spacing: 0.18em;
+  color: var(--nw-text-faint);
+}
+
+.search-wrap { flex: 1 1 auto; max-width: 420px; position: relative; }
+.search-form { margin: 0; }
+.search-field {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  background: var(--nw-surface);
+  /* 3:1, not 1.94:1. `--nw-border-strong` is a hairline token tuned for
+   * decorative separators, but on the search field this 1px border is the ONLY
+   * thing identifying the input's boundary — the "user agent control" exemption
+   * no longer applies because the author replaced the UA border. Non-text
+   * contrast (1.4.11) wants 3:1 against the adjacent background. */
+  border: 1px solid var(--nw-border-input);
+  border-radius: var(--nw-r-sm);
+  overflow: hidden;
+}
+.search-field:focus-within {
+  border-color: var(--nw-accent);
+  box-shadow: var(--nw-focus-ring);
+}
+.search-icon { display: flex; padding-left: var(--nw-4); color: var(--nw-text-faint); }
+.search-icon .lucide { width: 16px; height: 16px; }
+
+#q {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0 var(--nw-3);
+  background: none;
+  border: none;
+  outline: none;
+  font-size: var(--nw-text-sm);
+}
+#q::placeholder { color: var(--nw-text-faint); }
+
+.geo-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 100%;
+  background: none;
+  border: none;
+  border-left: 1px solid var(--nw-rule);
+  color: var(--nw-text-muted);
+  cursor: pointer;
+}
+.geo-btn:hover { color: var(--nw-accent); background: var(--nw-surface-alt); }
+.geo-btn .lucide { width: 16px; height: 16px; }
+
+.search-results {
+  position: absolute;
+  top: calc(100% + var(--nw-2));
+  left: 0;
+  right: 0;
+  z-index: 120;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--nw-surface);
+  border: 1px solid var(--nw-border-strong);
+  border-radius: var(--nw-r-lg);
+  box-shadow: var(--nw-elev-2);
+}
+.search-result-item {
+  display: flex;
+  align-items: center;
+  gap: var(--nw-3);
+  min-height: 44px;
+  padding: var(--nw-3) var(--nw-4);
+  border-bottom: 1px solid var(--nw-rule);
+  cursor: pointer;
+}
+.search-result-item:last-child { border-bottom: none; }
+.search-result-item:hover,
+.search-result-item[aria-selected='true'] { background: var(--nw-surface-alt); }
+.search-result-item .loc-flag { display: flex; color: var(--nw-text-faint); }
+.search-result-item .loc-flag .lucide { width: 16px; height: 16px; }
+.search-result-item .loc-name { font: 600 var(--nw-text-sm)/1.2 var(--nw-font); color: var(--nw-text); }
+.search-result-item .loc-sub { font: 400 var(--nw-text-xs)/1.3 var(--nw-font); color: var(--nw-text-muted); }
+.search-no-results { padding: var(--nw-5); text-align: center; font-size: var(--nw-text-sm); color: var(--nw-text-muted); }
+
+.header-right {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--nw-3);
+  margin-left: auto;
+}
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 var(--nw-2);
+  background: var(--nw-surface);
+  border: 1px solid var(--nw-border);
+  border-radius: var(--nw-r-sm);
+  color: var(--nw-text-body);
+  font: 600 var(--nw-text-xs)/1 var(--nw-font-num);
+  cursor: pointer;
+}
+.icon-btn:hover { border-color: var(--nw-accent); color: var(--nw-accent); }
+.icon-btn[aria-pressed='true'] { background: var(--nw-accent-soft); border-color: var(--nw-accent-line); color: var(--nw-accent); }
+.icon-btn .lucide { width: 16px; height: 16px; }
+
+/* ─── The way back to the cover ───────────────────────────────────────────
+   An engraved label rather than another icon button: an arrow alone beside four
+   toggles reads as "undo", and this is the one control on the page whose
+   destination is a different page rather than a different state.
+
+   The hairline on the right is what separates it from the toggle group — without
+   it, four icon-ish controls sit in a row and the one that navigates is
+   indistinguishable from the three that do not.
+
+   Sized to match `.icon-btn` (32px) so the masthead's optical rhythm holds, and
+   the label collapses to the bare arrow at <=639px, where the header row is
+   already carrying brand + three toggles + the provenance badge. */
+.cover-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nw-2);
+  min-height: 32px;
+  padding: 0 var(--nw-3);
+  margin-right: var(--nw-2);
+  border-right: 1px solid var(--nw-border);
+  color: var(--nw-text-muted);
+  text-decoration: none;
+  font: 600 var(--nw-text-xs)/1 var(--nw-font-cond);
+  letter-spacing: var(--nw-track-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.cover-link:hover { color: var(--nw-accent); text-decoration: none; }
+/* The chevron points out of the page rather than back through its own history,
+   so `history.back()` would be wrong here: the reader may have arrived by a
+   deep link, and back would then leave the site entirely. */
+.cover-link .lucide { width: 14px; height: 14px; }
+
+.data-source {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 var(--nw-3);
+  border: 1px solid var(--nw-border-strong);
+  border-radius: var(--nw-r-pill);
+  font: 600 var(--nw-text-xs)/1 var(--nw-font-cond);
+  letter-spacing: var(--nw-track-micro);
+  text-transform: uppercase;
+  color: var(--nw-text-muted);
+  white-space: nowrap;
+}
+.data-source.is-sample { border-color: var(--nw-sev-moderate); color: var(--nw-sev-moderate); }
+
+.auto-refresh {
+  font: 500 var(--nw-text-xs)/1 var(--nw-font);
+  color: var(--nw-text-faint);
+  white-space: nowrap;
+}
+
+/* ─── Featured locations ─────────────────────────────────────────────────── */
+.locations-bar {
+  border-top: 1px solid var(--nw-rule);
+  padding-bottom: var(--nw-1);
+}
+.locations {
+  display: flex;
+  gap: var(--nw-2);
+  max-width: var(--nw-container);
+  margin: 0 auto;
+  padding: var(--nw-3) var(--nw-gutter);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.locations::-webkit-scrollbar { display: none; }
+
+.loc-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nw-2);
+  height: 40px;
+  padding: 0 var(--nw-4);
+  background: var(--nw-surface);
+  border: 1px solid var(--nw-border);
+  border-radius: var(--nw-r-pill);
+  font: 600 var(--nw-text-sm)/1 var(--nw-font);
+  color: var(--nw-text-body);
+  white-space: nowrap;
+  cursor: pointer;
+  list-style: none;
+}
+.loc-chip:hover,
+.loc-chip:focus-visible { border-color: var(--nw-accent-line); }
+.loc-chip.active {
+  position: relative;
+  border-color: var(--nw-accent);
+  background: var(--nw-accent-soft);
+  color: var(--nw-accent);
+  padding-left: calc(var(--nw-4) + var(--nw-2));
+}
+.loc-chip.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 18px;
+  background: var(--nw-accent);
+  border-radius: var(--nw-r-pill);
+}
+.loc-chip-sub { font-weight: 400; color: var(--nw-text-faint); }
+.loc-chip-name { font-weight: 600; color: var(--nw-text); }
+.loc-chip.active .loc-chip-sub { color: var(--nw-accent); }
+.loc-fav { color: var(--nw-accent); }
+.loc-fav .lucide { width: 10px; height: 10px; }
+.loc-skeleton {
+  flex: 0 0 140px;
+  height: 40px;
+  border-radius: var(--nw-r-pill);
+  background: var(--nw-surface-sunken);
+  list-style: none;
+}
+.loc-error { font-size: var(--nw-text-sm); color: var(--nw-text-muted); list-style: none; }
+
+/* ─── Empty state ────────────────────────────────────────────────────────── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--nw-3);
+  padding: var(--nw-10) var(--nw-5);
+  text-align: center;
+}
+.empty-title {
+  display: flex;
+  align-items: center;
+  gap: var(--nw-2);
+  font: 700 var(--nw-text-h3)/var(--nw-lh-snug) var(--nw-font);
+  color: var(--nw-text);
+}
+.empty-title .lucide { width: 18px; height: 18px; color: var(--nw-accent); }
+.empty-sub { font-size: var(--nw-text-sm); color: var(--nw-text-body); max-width: 42ch; }
+
+/* ─── Current / hero ─────────────────────────────────────────────────────── */
+.section-current { padding-bottom: var(--nw-7); border-bottom: 1px solid var(--nw-border-strong); }
+
+.current-grid {
+  display: grid;
+  /* 240px, not 300px. The middle `1fr` track can shrink to nothing, so with a
+   * 300px first track the `auto` fact strip took its content width and the
+   * readout painted straight over it — measured 15.55px of overlap at 1200px with
+   * an ordinary 6-character reading, and 30px at EVERY width >= 1280 with a
+   * 7-character one, because the container caps at 1280px and the geometry
+   * freezes there. 240px alone is not sufficient below 1260px, which is what the
+   * the 1200-1272px query below, whose arithmetic is documented there. */
+  grid-template-columns: 240px minmax(0, 1fr) auto;
+  gap: var(--nw-7);
+  align-items: start;
+}
+
+.current-place { min-width: 0; }
+.current-block { display: flex; align-items: flex-start; gap: var(--nw-5); min-width: 0; }
+.current-location {
+  font: 700 var(--nw-text-h1)/var(--nw-lh-snug) var(--nw-font);
+  letter-spacing: -0.02em;
+  color: var(--nw-text);
+}
+.current-region { font: 400 var(--nw-text-sm)/var(--nw-lh-snug) var(--nw-font); color: var(--nw-text-muted); }
+.current-timezone,
+.current-observed {
+  font-size: var(--nw-text-xs);
+  line-height: var(--nw-lh-body);
+  color: var(--nw-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.current-generated {
+  font-size: var(--nw-text-xs);
+  line-height: var(--nw-lh-body);
+  font-variant-numeric: tabular-nums;
+  color: var(--nw-text-faint);
+}
+
+.current-icon { color: var(--nw-temp-high); flex: 0 0 auto; line-height: 1; }
+.current-icon .lucide { width: 96px; height: 96px; stroke-width: 1.75; }
+.current-icon[data-condition='clear'] { color: var(--nw-uv-moderate); }
+.current-icon[data-condition='partly_cloudy'] { color: var(--nw-uv-moderate); }
+.current-icon[data-condition='rain'],
+.current-icon[data-condition='drizzle'],
+.current-icon[data-condition='thunderstorm'],
+.current-icon[data-condition='snow'],
+.current-icon[data-condition='sleet'] { color: var(--nw-precip); }
+.current-icon[data-condition='fog'],
+.current-icon[data-condition='cloudy'] { color: var(--nw-text-muted); }
+
+.current-temp-wrap { min-width: 0; }
+.current-block.is-error .current-icon { visibility: hidden; }
+/* THE READOUT.
+ *
+ * This is the one number the page exists to show, so it is built as a gauge face
+ * rather than as a heading: monospace (fixed pitch, so a re-render never shifts
+ * it), weight 400 because Plex Mono gets heavy fast, and pulled in with a NEGATIVE
+ * tracking value. Mono at 8rem is much wider than a proportional face at the same
+ * size, and untracked it overhangs its box — hence the pull-in.
+ *
+ * The calibration rule underneath is a repeating-linear-gradient of hard 1px ticks
+ * on a transparent ground. It is `aria-hidden` (see index.html) and carries no
+ * information: it is there because a gauge has a scale, and its presence is what
+ * makes the number read as a measurement rather than as a headline. */
+.current-temp {
+  font: 400 var(--nw-text-display)/var(--nw-lh-tight) var(--nw-font-num);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--nw-track-read);
+  color: var(--nw-text);
+  position: relative;
+  display: inline-block;
+}
+.current-temp::after {
+  content: '';
+  display: block;
+  height: 7px;
+  margin-top: var(--nw-2);
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--nw-border-strong) 0 1px,
+    transparent 1px var(--nw-tick-pitch, 8px)
+  );
+  /* Fade the scale out at both ends so it reads as a calibrated edge rather than
+     as a dashed border that someone forgot to finish. */
+  mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+}
+.current-condition {
+  font: 600 var(--nw-text-h3)/var(--nw-lh-snug) var(--nw-font-cond);
+  letter-spacing: var(--nw-track-label);
+  text-transform: uppercase;
+  color: var(--nw-text-body);
+}
+.inline-error {
+  margin-top: var(--nw-3);
+  display: flex;
+  align-items: center;
+  gap: var(--nw-3);
+  font-size: var(--nw-text-sm);
+  color: var(--nw-sev-severe);
+}
+.current-temp-wrap.is-loading .current-temp,
+.current-temp-wrap.is-loading .current-condition {
+  color: transparent;
+  background: var(--nw-surface-sunken);
+  border-radius: var(--nw-r-xs);
+  min-height: 1em;
+  min-width: 6ch;
+}
+.section-current.is-loading .current-icon { opacity: 0.35; }
+
+.current-facts { display: flex; align-items: stretch; }
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nw-2);
+  padding-inline: var(--nw-6);
+  border-left: 1px solid var(--nw-rule);
+  list-style: none;
+}
+.fact:first-child { border-left: none; padding-left: 0; }
+.fact-label {
+  font: 600 var(--nw-text-label)/var(--nw-lh-snug) var(--nw-font-cond);
+  letter-spacing: var(--nw-track-label);
+  text-transform: uppercase;
+  color: var(--nw-text-muted);
+}
+/* The value beside a label is a readout, not prose — mono, and slightly pulled
+ * in so a 3-digit value does not out-measure the 2-digit ones above it. */
+.fact-value { font: 600 var(--nw-text-h3)/var(--nw-lh-snug) var(--nw-font-num); }
+
+/* ─── Alerts ─────────────────────────────────────────────────────────────── */
+.alerts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nw-2);
+}
+/* Alert severity: a 4px left rule plus a transparent 1px badge in the
+   severity colour. Four mapping rules, everything else consumes them. */
+.sev-minor,
+[data-sev='sev-minor'] { --sev: var(--nw-sev-minor); }
+
+.sev-moderate,
+[data-sev='sev-moderate'] { --sev: var(--nw-sev-moderate); }
+
+.sev-severe,
+[data-sev='sev-severe'] { --sev: var(--nw-sev-severe); }
+
+.sev-extreme,
+[data-sev='sev-extreme'] { --sev: var(--nw-sev-extreme); }
+
+.alert-item {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: var(--nw-4);
+  align-items: start;
+  background: var(--nw-sev-tint);
+  border: 1px solid var(--nw-border);
+  border-left: 4px solid var(--sev, var(--nw-sev-minor));
+  border-radius: var(--nw-r-md);
+  padding: var(--nw-4);
+}
+
+.alert-badge {
+  justify-self: start;
+  padding: var(--nw-1) var(--nw-3);
+  background: transparent;
+  border: 1px solid var(--sev, var(--nw-sev-minor));
+  border-radius: var(--nw-r-xs);
+  font: 700 var(--nw-text-xs)/1.4 var(--nw-font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sev, var(--nw-sev-minor));
+  white-space: nowrap;
+}
+
+.alert-text { min-width: 0; }
+.alert-title { display: block; font: 700 var(--nw-text-sm)/var(--nw-lh-snug) var(--nw-font); color: var(--nw-text); }
+.alert-desc { font: 400 var(--nw-text-sm)/var(--nw-lh-body) var(--nw-font); color: var(--nw-text-body); }
+.alert-window {
+  margin-top: var(--nw-2);
+  font: 500 var(--nw-text-xs)/var(--nw-lh-body) var(--nw-font);
+  font-variant-numeric: tabular-nums;
+  color: var(--nw-text-muted);
+}
+.alert-type { color: var(--nw-text); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+.alert-source { display: block; margin-top: var(--nw-1); font-size: var(--nw-text-xs); font-style: italic; color: var(--nw-text-muted); }
+
+/* ─── Insights ───────────────────────────────────────────────────────────── */
+.insight-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--nw-3) var(--nw-7);
+}
+.insight-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: var(--nw-3);
+  padding-left: var(--nw-3);
+  border-left: 3px solid var(--nw-accent-line);
+  list-style: none;
+}
+.insight-item[data-priority='high'] { border-left-color: var(--nw-sev-severe); }
+.insight-item[data-priority='medium'] { border-left-color: var(--nw-sev-moderate); }
+.insight-icon { display: flex; padding-top: 2px; color: var(--nw-accent); }
+.insight-item[data-priority='high'] .insight-icon { color: var(--nw-sev-severe); }
+.insight-item[data-priority='medium'] .insight-icon { color: var(--nw-sev-moderate); }
+.insight-icon .lucide { width: 16px; height: 16px; }
+.insight-kicker {
+  font: 700 var(--nw-text-xs)/1.4 var(--nw-font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--nw-text-muted);
+}
+.insight-msg { font: 400 var(--nw-text-sm)/var(--nw-lh-body) var(--nw-font); color: var(--nw-text); }
+.insight-evidence { margin: var(--nw-1) 0 0; padding: 0; list-style: none; }
+.insight-evidence li { font-size: var(--nw-text-xs); color: var(--nw-text-faint); }
+.insight-evidence li::before { content: '· '; }
+
+/* ─── Hourly ─────────────────────────────────────────────────────────────── */
+.hourly-chart-wrap { overflow-x: auto; scrollbar-width: none; }
+.hourly-chart-wrap::-webkit-scrollbar { display: none; }
+.hourly-chart { display: block; }
+
+.chart-grid { stroke: var(--nw-rule); stroke-width: 1; opacity: 1; }
+.chart-axis-label { fill: var(--nw-text-faint); font-size: 9px; font-weight: 500; }
+.chart-line { fill: none; stroke: var(--nw-temp-high); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart-area { fill: var(--nw-precip-soft); opacity: 0.55; stroke: none; }
+.chart-point { fill: var(--nw-surface); stroke: var(--nw-temp-high); stroke-width: 2; }
+.chart-precip-bar { fill: var(--nw-precip); opacity: 0.22; }
+
+.hourly-scroll {
+  overflow-x: auto;
+  /* The SVG reserves this much on each side for its axis labels. Without it the
+     strip had no gutter, so every curve point sat half a column right of its
+     own column. Both gutters are declared here so the last column stays
+     reachable, and the two scrollers keep identical scrollWidths so the
+     scroll-sync stays exact. */
+  padding-left: var(--nw-hour-gutter-l);
+  padding-right: var(--nw-hour-gutter-r);
+  scrollbar-width: thin;
+  scrollbar-color: var(--nw-border-strong) transparent;
+}
+.hourly-scroll::-webkit-scrollbar { height: 6px; }
+.hourly-scroll::-webkit-scrollbar-thumb { background: var(--nw-border-strong); border-radius: var(--nw-r-pill); }
+.hourly { display: flex; }
+.hour-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--nw-2);
+  width: var(--nw-hour-col-w);
+  flex: 0 0 var(--nw-hour-col-w);
+  padding: var(--nw-3) 0;
+  border-left: 1px solid var(--nw-rule);
+  list-style: none;
+}
+.hour-col:first-child { border-left: none; }
+.hour-col.hour-divider { border-left-color: var(--nw-border-strong); }
+.hour-col[data-now='true'] { background: var(--nw-surface-sunken); }
+.hour-time { font: 500 var(--nw-text-xs)/1.2 var(--nw-font-num); color: var(--nw-text-muted); }
+.hour-col[data-now='true'] .hour-time { font-weight: 700; color: var(--nw-accent); }
+.hour-icon { display: flex; color: var(--nw-text-body); }
+.hour-icon .lucide { width: 24px; height: 24px; stroke-width: 1.75; }
+.hour-temp { font: 600 var(--nw-text-sm)/1.2 var(--nw-font-num); font-variant-numeric: tabular-nums; color: var(--nw-text); }
+.hour-feels,
+.hour-mm {
+  font-size: var(--nw-text-xs);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  color: var(--nw-text-faint);
+}
+.hour-pop { font: 600 var(--nw-text-xs)/1.2 var(--nw-font-num); font-variant-numeric: tabular-nums; color: var(--nw-precip); }
+
+/* Reserved-but-empty hourly slots.
+ *
+ * The strip used to omit `.hour-feels`, `.hour-pop`, `.hour-mm` and `.hour-uv`
+ * entirely when a value was absent. `.hour-col` is a flex column with no fixed
+ * slot heights, so each omission pulled everything below it up by a line and the
+ * precipitation figures sat on two or three different baselines across 48
+ * columns. The markup now always emits the slot; this hides the content while
+ * keeping the space, so every column's figures line up.
+ *
+ * `min-height` is load-bearing, not decoration. `visibility: hidden` still
+ * generates a box, but an empty block has no line box, so a hidden empty slot
+ * collapsed to 0px and only its flex `gap` survived — the figures were still
+ * landing on 3 (pop) to 5 (uv) different baselines. All four slots already share
+ * `font-size: var(--nw-text-xs)` with `line-height: 1.2`, so `1.2em` is exactly
+ * the populated line box. */
+.hour-feels,
+.hour-pop,
+.hour-mm,
+.hour-uv { min-height: 1.2em; }
+
+.hour-feels.is-empty,
+.hour-pop.is-empty,
+.hour-mm.is-empty,
+.hour-uv.is-empty {
+  visibility: hidden;
+}
+/* UV scale. Colour is never the only signal: uvWord() ships the word alongside.
+   One mapping rule per band, consumed by the value, the label and the cap. */
+.uv-low,
+[data-uv='low'] { --uv: var(--nw-uv-low); }
+
+.uv-moderate,
+[data-uv='moderate'] { --uv: var(--nw-uv-moderate); }
+
+.uv-high,
+[data-uv='high'] { --uv: var(--nw-uv-high); }
+
+.uv-very-high,
+[data-uv='very-high'] { --uv: var(--nw-uv-very-high); }
+
+.uv-extreme,
+[data-uv='extreme'] { --uv: var(--nw-uv-extreme); }
+
+/* UV read-out in the hourly strip. */
+.hour-uv {
+  font-size: var(--nw-text-xs);
+  line-height: 1.2;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--uv, var(--nw-text-faint));
+}
+
+/* ─── Daily ──────────────────────────────────────────────────────────────── */
+/* `.panel.panel-flush.daily-scroll` is (0,3,0) and beats `.panel-flush {
+ * overflow: hidden }`'s (0,1,0) shorthand on specificity alone.
+ *
+ * The first version of this rule was plain `.daily-scroll { overflow-x: auto }`,
+ * also (0,1,0), and it worked only because it came LATER in the file than
+ * `.panel-flush`. Same zero-margin coupling that has broken four other rules
+ * here. The per-axis declarations are kept as well as the raised specificity:
+ * `overflow-y: hidden` is what `.panel-flush` was already computing, and saying
+ * it explicitly means someone "tidying" this to `overflow: auto` can no longer
+ * silently kill the table's sideways scroll by accident. */
+.panel.panel-flush.daily-scroll { overflow-x: auto; overflow-y: hidden; }
+.daily-scroll::-webkit-scrollbar { height: 6px; }
+.daily-scroll::-webkit-scrollbar-thumb { background: var(--nw-border-strong); border-radius: var(--nw-r-pill); }
+.daily { min-width: max-content; }
+/* Track count must equal the number of placed grid items at every breakpoint,
+ * or auto-placement spills the last item onto an implicit row and the row's
+ * border-bottom draws a rule through the middle of it. Placed items are:
+ * daily-day, daily-icon, daily-moon, daily-desc, daily-aqi, daily-sun,
+ * daily-pop, daily-bar-wrap, daily-lo, daily-hi — ten. `.daily-pop` and
+ * `.daily-aqi` are always emitted by renderDaily(), empty when there is no
+ * value, precisely so this count never changes with the data. */
+.daily-row {
+  display: grid;
+  grid-template-columns: 96px 32px 18px minmax(0, 1fr) 64px 110px 44px 88px 44px 48px;
+  align-items: center;
+  column-gap: var(--nw-4);
+  min-height: 44px;
+  padding: 0 var(--nw-4);
+  border-bottom: 1px solid var(--nw-rule);
+  list-style: none;
+}
+.daily-row:last-child { border-bottom: none; }
+.daily-row:nth-child(odd) { background: var(--nw-surface-alt); }
+.daily-row[data-today='true'] .daily-day { color: var(--nw-accent); }
+
+.daily-day { font: 600 var(--nw-text-sm)/1.2 var(--nw-font); color: var(--nw-text); }
+.daily-icon { display: flex; color: var(--nw-text-body); }
+.daily-icon .lucide { width: 24px; height: 24px; stroke-width: 1.75; }
+.daily-moon { display: flex; color: var(--nw-text-faint); }
+.daily-moon svg { width: 14px; height: 14px; display: block; }
+.daily-desc {
+  font-size: var(--nw-text-sm);
+  color: var(--nw-text-muted);
+  text-transform: capitalize;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.daily-aqi { font: 600 var(--nw-text-xs)/1.2 var(--nw-font-num); font-variant-numeric: tabular-nums; color: var(--nw-text-faint); }
+.daily-sun { font: 500 var(--nw-text-xs)/1.2 var(--nw-font-num); font-variant-numeric: tabular-nums; color: var(--nw-temp-high); white-space: nowrap; }
+.daily-pop { font: 600 var(--nw-text-xs)/1.2 var(--nw-font-num); font-variant-numeric: tabular-nums; color: var(--nw-precip); text-align: right; }
+.daily-bar-wrap { padding-right: var(--nw-2); }
+.daily-bar { position: relative; height: 4px; background: var(--nw-temp-track); border-radius: var(--nw-r-xs); }
+.daily-bar-range {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: var(--nw-r-xs);
+  background: linear-gradient(90deg, var(--nw-temp-low), var(--nw-temp-high));
+}
+.daily-bar-now { position: absolute; top: -3px; width: 2px; height: 10px; background: var(--nw-text); }
+.daily-lo {
+  font: 600 var(--nw-text-sm)/1.2 var(--nw-font-num);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--nw-text-muted);
+}
+.daily-hi {
+  font: 600 var(--nw-text-sm)/1.2 var(--nw-font-num);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--nw-temp-high);
+}
+/* Marks the "rest of today" row, whose high/low are a 3-hour window's lower
+ * bound rather than a real daily range. Sits INSIDE `.daily-hi` so the track
+ * count is unchanged — a sibling element here would have made the 10-track grid
+ * hold 11 items on that row only, which is exactly the per-row count drift this
+ * grid has been bitten by.
+ *
+ * And it gets its OWN LINE, deliberately. At 48px there is no room for it beside
+ * the number: the value needs 23.40px ("21°") or 31.20px ("104°") and the
+ * marker 31.77px, so the pair is 57.17–64.97px — over by 9.17 to 16.97px. The
+ * marker is `nowrap` while the pair is not, so whether the browser overflowed it
+ * leftwards across `.daily-bar-wrap` or wrapped it was left to the engine: two
+ * different visible defects, neither chosen on purpose.
+ *
+ * `display: block` makes the choice explicit and is correct either way, and it
+ * is the layout answer rather than a track change — the 48px track still holds
+ * the number it exists for. The cell becomes an intentional two lines totalling
+ * 28.8px, still under `.daily-row`'s 44px min-height, so the row does not grow
+ * and `.daily-lo` keeps its baseline. */
+.daily-partial {
+  color: var(--nw-text-faint);
+  font: 500 var(--nw-text-xs)/1.2 var(--nw-font);
+  display: block;
+  margin-left: 0;
+  margin-top: 1px;
+  white-space: nowrap;
+}
+/* The direction is nullable. With no reading there is no arrow to draw. */
+.wind-dir-unknown { color: var(--nw-text-faint); font: var(--nw-text-xs)/1.4 var(--nw-font); }
+
+/* ─── Map ────────────────────────────────────────────────────────────────── */
+.map-stage { position: relative; }
+/* Containing block for .map-recentre only. #map-stage also holds the layer
+   switcher, which leaves absolute positioning at <=639px and grows the stage
+   downward — resolving `bottom: 8px` against the stage dropped the button
+   onto the switcher row and over its pills. */
+.map-frame { position: relative; }
+.weather-map {
+  height: 480px;
+  width: 100%;
+  border: 1px solid var(--nw-border);
+  border-radius: var(--nw-r-md);
+  box-shadow: inset 0 0 0 1px var(--nw-border-strong);
+  background: var(--nw-surface-sunken);
+}
+.map-layer-switch {
+  position: absolute;
+  top: var(--nw-4);
+  left: var(--nw-4);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  gap: var(--nw-1);
+  /* Reserve the top-right corner for Leaflet's zoom control, which sits
+   * `topright` with a 10px control margin and is 32px wide. The switcher used
+   * to be allowed to run to `100% - 32px`, so once it reached its cap its last
+   * 24px sat under `.leaflet-top` (z-index 1000, `pointer-events: auto`) and
+   * the tail of the layer pills plus `#map-opacity` were unclickable. The 7
+   * shipped layer names are ~600px natural, so the cap is reached below roughly
+   * a 660px viewport. 12 left + 44 zoom + 28 clearance + 12 right. */
+  max-width: calc(100% - 96px);
+  padding: var(--nw-1);
+  background: var(--nw-surface);
+  border: 1px solid var(--nw-border-strong);
+  border-radius: var(--nw-r-pill);
+  box-shadow: var(--nw-elev-1);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.map-layer-switch::-webkit-scrollbar { display: none; }
+/* The switcher scrolls between roughly 640 and 779px, where the cap is narrower
+ * than the seven layer names, and the scrollbar is hidden — so there was no cue
+ * that it scrolls at all. A right-edge fade signals the overflow. Applied ONLY
+ * when the element measurably overflows (`is-scrollable`, toggled in
+ * `renderMapLayerButtons`), because at >=900px the band is full-bleed and every
+ * layer already fits: an unconditional mask was fading the right edge of the
+ * opacity slider, the container border and its shadow for no reason.
+ * Keyboard users are unaffected: focusing an off-screen pill scrolls it in. */
+.map-layer-switch.is-scrollable {
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+}
+.map-layer-btn {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 var(--nw-4);
+  background: none;
+  border: none;
+  border-radius: var(--nw-r-pill);
+  font: 600 var(--nw-text-xs)/1 var(--nw-font);
+  color: var(--nw-text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.map-layer-btn:hover { color: var(--nw-text); }
+.map-layer-btn[aria-pressed='true'] { background: var(--nw-accent); color: var(--nw-text-invert); }
+.map-switch-rule { flex: 0 0 auto; width: 1px; align-self: stretch; margin: var(--nw-1) var(--nw-2); background: var(--nw-rule); }
+#map-opacity {
+  flex: 0 0 auto;
+  width: 96px;
+  /* 2.5.8 Target Size (Minimum) wants 24x24. The spacing exception cannot
+   * rescue a 20px control here: the layer buttons sit 2px away, so their 24px
+   * hit circles intersect. */
+  height: 24px;
+  accent-color: var(--nw-accent);
+  cursor: pointer;
+}
+.map-recentre {
+  position: absolute;
+  right: var(--nw-4);
+  /* Clear of Leaflet's attribution strip. `.leaflet-bottom` sits at z-index
+   * 1000 and its control has margin-bottom 10px plus ~17px of height, so it
+   * occupies roughly 10-27px from the bottom. At z-index 500 this button used
+   * to sit underneath it: the lower half was veiled by a translucent bar and
+   * unclickable, and in dark theme that bar was a bright white strip. */
+  bottom: 40px;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--nw-surface);
+  border: 1px solid var(--nw-border-strong);
+  border-radius: var(--nw-r-sm);
+  box-shadow: var(--nw-elev-1);
+  color: var(--nw-text-body);
+  cursor: pointer;
+}
+.map-recentre:hover { color: var(--nw-accent); border-color: var(--nw-accent); }
+.map-caption { margin-top: var(--nw-3); font-size: var(--nw-text-xs); color: var(--nw-text-faint); }
+
+/* ─── Details ────────────────────────────────────────────────────────────── */
+.details { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.detail-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nw-2);
+  padding: var(--nw-4) var(--nw-5);
+  border-bottom: 1px solid var(--nw-rule);
+  border-right: 1px solid var(--nw-rule);
+  /* The 3px UV cap is painted, not laid out.
+   *
+   * As `border-left: 3px solid transparent` it reserved the space (so the cap
+   * did not sum with the neighbour's 1px `border-right` into a 4px seam) — but
+   * `border-left` participates in layout, so column 1's labels started 3px right
+   * of the identical labels in columns 2 and 3. A ragged left edge in a grid
+   * whose whole premise is alignment, at all three column counts.
+   *
+   * An inset `box-shadow` paints inside the cell's own padding box and
+   * contributes nothing to layout, so it gives the same reserved 3px cap with no
+   * offset. Safe to clip: the details panel is `.panel-flush`, so `overflow:
+   * hidden` is active and an inset shadow is well inside the border box. */
+  box-shadow: inset 3px 0 0 var(--uv, transparent);
+}
+.details > .detail-cell:nth-child(3n) { border-right: none; }
+/* The final ROW loses its bottom rule, not merely the final cell.
+ *
+ * The last row's width is `items % cols`, or `cols` when that is 0 — it is NOT
+ * simply the column count. This grid has a fixed 15 cells, so:
+ *     3 cols -> 15 % 3 = 0 -> last row 3 wide  (-n + 3)
+ *     2 cols -> 15 % 2 = 1 -> last row 1 wide  (-n + 1)
+ *     1 col  -> 15 % 1 = 0 -> last row 1 wide  (-n + 1)
+ * Assuming the column count is what produced `-n + 2` for the 2-column case,
+ * which stripped cell 14's separator as well and let the Moon-phase and Daylight
+ * rows read as one unbroken block. Each breakpoint states its own literal below
+ * rather than sharing a token, because the value is derived from BOTH the column
+ * count and the cell count and would be wrong for a different cell count. */
+.details > .detail-cell:nth-last-child(-n + 3) { border-bottom: none; }
+/* No `border-left-color` here any more: the cap is drawn by the `box-shadow`
+ * on `.detail-cell` above, and that rule already reads `--uv` off the same
+ * element. Setting the border colour as well would be dead weight. */
+.detail-cell[data-uv] .detail-value,
+.detail-cell[data-uv] .detail-label { color: var(--uv, inherit); }
+.detail-head { display: flex; align-items: center; gap: var(--nw-2); }
+.detail-label { font: 600 var(--nw-text-label)/var(--nw-lh-snug) var(--nw-font-cond); letter-spacing: var(--nw-track-label); text-transform: uppercase; color: var(--nw-text-muted); }
+.detail-label .lucide { width: 14px; height: 14px; color: var(--nw-text-faint); }
+.detail-value { display: flex; align-items: baseline; gap: var(--nw-2); }
+.detail-note { font-size: var(--nw-text-xs); color: var(--nw-text-muted); }
+/* No `opacity` here. This rule carries the UV BAND WORD — "Low", "High" — which
+ * is the explicit non-colour signal the whole UV system depends on (1.4.1), and
+ * an alpha blends the token toward the surface AFTER it has been solved, so no
+ * re-solve of `--nw-uv-*` could ever fix it: the word sat at 3.46-3.54:1 in the
+ * light theme and 3.89:1 for "Very high" in the dark one, while the coloured
+ * chip beside it was perfectly legible. A reader who cannot resolve the colour
+ * had nothing left. Weight and size already differentiate the word. */
+.detail-cell[data-uv] .detail-note { color: inherit; }
+.wind-arrow { color: var(--nw-text-faint); }
+.wind-arrow .lucide { width: 14px; height: 14px; }
+.moon-glyph { display: flex; color: var(--nw-text-muted); }
+.moon-glyph svg { width: 16px; height: 16px; display: block; }
+
+/* ─── Section pair ───────────────────────────────────────────────────────── */
+.section-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--nw-section-gap); align-items: start; }
+/* One half hidden: the survivor takes the whole row instead of sitting in
+   column 1 of two with an empty column beside it. */
+.section-pair.is-single { grid-template-columns: minmax(0, 1fr); }
+
+/* ─── Air quality ────────────────────────────────────────────────────────── */
+.air-quality-head { display: flex; align-items: baseline; gap: var(--nw-5); margin-bottom: var(--nw-5); }
+.aqi-value {
+  /* 400, not 300. This was the only declaration in the entire stylesheet asking
+   * for a weight the page does not load — `index.html` requests
+   * `IBM+Plex+Mono:wght@400;500;600` — so the AQI value, the second-largest
+   * number on the page, silently rendered at 400 by nearest-weight fallback
+   * rather than the light 300 that was written here. Either the weight loads or
+   * the declaration changes; a stylesheet should never name a weight the
+   * document has not asked for, because the fallback is invisible.
+   *
+   * 400 is also the right weight rather than a compromise: `#current-temp` is
+   * deliberately 400 (§3.8), and one large numeral at 300 beside another at 400
+   * reads as a mistake. Adding `wght@300` to the request would buy a fourth
+   * weight of a monospace face — a request and roughly 20KB — for one element. */
+  font: 400 3rem/var(--nw-lh-tight) var(--nw-font-num);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  /* Category colour falls through to the default ink via --aqi-cat below. */
+  color: var(--aqi-cat, var(--nw-text));
+}
+.aqi-meta { min-width: 0; }
+.aqi-category {
+  font: 600 var(--nw-text-h3)/var(--nw-lh-snug) var(--nw-font);
+  /* No text-transform: the band names come from AQI_CATEGORY_LABEL and are
+     already cased, including "Unhealthy for sensitive groups". */
+  color: var(--aqi-cat, inherit);
+}
+.aqi-advice { font: 400 var(--nw-text-sm)/var(--nw-lh-body) var(--nw-font); color: var(--nw-text-body); }
+
+/* AQI category colour. One mapping rule per contract category sets the token;
+   every consumer below reads it. Adding a seventh category is one line, and
+   `unhealthy_sensitive` is no longer the case that silently falls back to
+   green — it is a real mapping here and in aqiColorClass(). */
+.aqi-good,
+[data-aqi-cat='good'] { --aqi-cat: var(--nw-aqi-good); }
+
+.aqi-moderate,
+[data-aqi-cat='moderate'] { --aqi-cat: var(--nw-aqi-moderate); }
+
+.aqi-unhealthy-sensitive,
+[data-aqi-cat='unhealthy_sensitive'] { --aqi-cat: var(--nw-aqi-unhealthy-sensitive); }
+
+.aqi-unhealthy,
+[data-aqi-cat='unhealthy'] { --aqi-cat: var(--nw-aqi-unhealthy); }
+
+.aqi-very-unhealthy,
+[data-aqi-cat='very_unhealthy'] { --aqi-cat: var(--nw-aqi-very-unhealthy); }
+
+.aqi-hazardous,
+[data-aqi-cat='hazardous'] { --aqi-cat: var(--nw-aqi-hazardous); }
+
+.aqi-unknown { --aqi-cat: var(--nw-text-muted); }
+
+/* Consumers of --aqi-cat. */
+.aqi-category::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: var(--nw-2);
+  background: var(--aqi-cat, transparent);
+  border-radius: var(--nw-r-pill);
+  vertical-align: middle;
+}
+.daily-aqi[data-aqi-cat] { color: var(--aqi-cat, var(--nw-text-faint)); }
+
+.aqi-scale { margin-bottom: var(--nw-5); }
+.aqi-scale-bar { display: flex; gap: var(--nw-2); }
+.aqi-seg {
+  flex: 1 1 0;
+  height: 8px;
+  background: var(--nw-surface-sunken);
+  border: 1px solid var(--nw-border);
+  border-radius: var(--nw-r-xs);
+}
+.aqi-seg[data-active='true'] { background: var(--aqi-cat); border-color: var(--aqi-cat); }
+.aqi-scale-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--nw-2);
+  font-size: var(--nw-text-xs);
+  color: var(--nw-text-faint);
+}
+
+.aqi-components { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.aqi-comp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nw-1);
+  padding: var(--nw-3) var(--nw-4);
+  border-left: 1px solid var(--nw-rule);
+  list-style: none;
+}
+.aqi-comp:nth-child(3n + 1) { border-left: none; }
+.aqi-comp-name { font: 600 var(--nw-text-label)/var(--nw-lh-snug) var(--nw-font-cond); letter-spacing: var(--nw-track-label); text-transform: uppercase; color: var(--nw-text-muted); }
+.aqi-comp-value { font: 600 var(--nw-text-sm)/var(--nw-lh-snug) var(--nw-font-num); font-variant-numeric: tabular-nums; color: var(--nw-text); }
+.aqi-comp-value.is-empty { color: var(--nw-text-faint); font-weight: 500; }
+
+/* ─── Astronomy ──────────────────────────────────────────────────────────── */
+.astro-arc { max-width: 240px; margin: 0 auto var(--nw-3); }
+.astro-arc svg { display: block; width: 100%; height: auto; max-height: 180px; }
+.sun-arc-track { fill: none; stroke: var(--nw-border-strong); stroke-width: 2; }
+.sun-arc-progress { fill: none; stroke: var(--nw-temp-high); stroke-width: 2; stroke-linecap: round; }
+.sun-horizon { stroke: var(--nw-border); stroke-width: 1; stroke-dasharray: 3 3; }
+.sun-dot { fill: var(--nw-temp-high); }
+.astro-arc-legend { text-align: center; font-size: var(--nw-text-xs); color: var(--nw-text-faint); margin-bottom: var(--nw-5); }
+
+.astronomy { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.astro-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nw-1);
+  padding: var(--nw-3) var(--nw-4);
+  border-bottom: 1px solid var(--nw-rule);
+  min-width: 0;
+}
+.astro-cell:nth-child(2n) { padding-right: 0; }
+/* `.astronomy` holds 7 cells in 2 columns, so only the very last one ends a
+   row. `-n + 2` assumed an even count and stripped cell 6's divider too,
+   leaving no rule between rows 3 and 4 at every width >= 640px. */
+.astro-cell:last-child { border-bottom: none; }
+/* `#astro-light` is the sibling grid and holds 4 cells in 2 columns — a FULL
+   final row, not a ragged one. `:last-child` therefore left cell 3 ("Blue hour
+   (am)") with a bottom rule beside a cell that had none, so the block ended
+   with a line under its left half only. Both cells of the last row drop it.
+
+   Scoped to the 2-column layout on purpose. Unscoped it is (0,3,0) and the
+   single-column restore in the <=639px block is only (0,2,0), so it won there
+   and removed the rule between cells 3 and 4 of the stacked list — the same
+   defect, inverted, on every phone width. Below 640px there is one column, the
+   last row is one cell wide, and `:last-child` is the correct rule again. */
+@media (min-width: 640px) {
+  .astro-light .astro-cell:nth-last-child(-n + 2) { border-bottom: none; }
+}
+.astro-label { font: 500 var(--nw-text-label)/var(--nw-lh-snug) var(--nw-font); letter-spacing: 0.02em; color: var(--nw-text-muted); }
+.astro-val {
+  display: flex;
+  align-items: center;
+  gap: var(--nw-2);
+  font: 600 var(--nw-text-sm)/var(--nw-lh-snug) var(--nw-font-num);
+  font-variant-numeric: tabular-nums;
+  color: var(--nw-text);
+}
+.astro-val.is-empty { color: var(--nw-text-faint); font-weight: 500; }
+.astro-subrule {
+  margin-top: var(--nw-4);
+  padding-top: var(--nw-3);
+  border-top: 1px solid var(--nw-rule);
+  font: 700 10px/1.4 var(--nw-font);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--nw-text-faint);
+}
+
+/* ─── Footer ─────────────────────────────────────────────────────────────── */
+.site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--nw-2);
+  max-width: var(--nw-container);
+  margin: 0 auto;
+  padding: var(--nw-6) var(--nw-gutter) var(--nw-8);
+  font-size: var(--nw-text-xs);
+  color: var(--nw-text-faint);
+}
+.footer-sep { opacity: 0.5; }
+
+/* ─── Mobile jump bar ────────────────────────────────────────────────────── */
+.jump-bar { display: none; }
+.jump-link { text-decoration: none; }
+
+/* ─── Toast ──────────────────────────────────────────────────────────────── */
+.toast {
+  position: fixed;
+  left: 50%;
+  /* Sits clear of the jump bar (52px, fixed to the bottom) at the widths where
+   * the bar is shown. At `bottom: 20px` its box spanned 20-56px from the bottom
+   * and covered the entire bar, so a focused jump link was wholly hidden for
+   * the 4.2s the toast lives (2.4.11). */
+  bottom: calc(52px + env(safe-area-inset-bottom) + var(--nw-3));
+  z-index: 300;
+  transform: translateX(-50%);
+  max-width: min(420px, calc(100vw - 2 * var(--nw-6)));
+  padding: var(--nw-3) var(--nw-5);
+  background: var(--nw-text);
+  color: var(--nw-text-invert);
+  border-radius: var(--nw-r-md);
+  box-shadow: var(--nw-elev-2);
+  font-size: var(--nw-text-sm);
+  text-align: center;
+}
+
+/* ─── Lucide base sizing ─────────────────────────────────────────────────── */
+.lucide { display: inline-block; vertical-align: middle; }
+.spin { animation: spin 0.8s linear infinite; }
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  margin: var(--nw-4) auto;
+  border: 2px solid var(--nw-border);
+  border-top-color: var(--nw-accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+.search-loading { display: flex; align-items: center; justify-content: center; min-height: 44px; }
+
+/* ─── §8 Responsive ──────────────────────────────────────────────────────── */
+@media (min-width: 1200px) {
+  /* The 1px border is enough; drop the hairline shadow. */
+  .panel { box-shadow: var(--nw-elev-0); }
+}
+
+/* 1200-1272px: seat the fact strip on row 2, as the 900-1199px block already
+ * does. Even at 240px the three-column grid cannot hold a 7-character reading at
+ * 1200px (needs 633.09px of middle track, has 579.09px), so the stacked
+ * arrangement has to extend past 1199px.
+ *
+ * THE 1272px BOUNDARY, with the arithmetic that actually holds:
+ *
+ *   clearance = gridW - 264 - factsW - req        req = 112 + 74.4445 * n
+ *   gridW     = min(innerWidth - scrollbar - 48, 1232)
+ *   safe      <=>  innerWidth >= scrollbar + 48 + 264 + factsW + req
+ *
+ * where `n` is the readout character count and `factsW` is the fact strip, an
+ * `auto` track and therefore CONTENT-SIZED. Measured values: 217.9px with the two
+ * High/Low dashes, 284.9px for six characters, 302px for three realistic Celsius
+ * values, and 312px when all three are seven characters. `req` is 633.09px for a
+ * seven-character readout, which is the worst case Earth allows in Celsius
+ * (`toDisplay` is a one-decimal round; the Fahrenheit branch is an integer, so
+ * 68.5F is five glyphs and `-89.2C` is seven).
+ *
+ * THE DRIVER IS THE SCROLLBAR, NOT THE DEVICE PIXEL RATIO. An earlier version of
+ * this comment blamed DPR and measured `factsW` growing from 312.0px at dpr 1 to
+ * 325.3px at dpr 1.5, on the theory that Chrome rounds glyph advances to whole
+ * device pixels while a media query cannot see the ratio. That is NOT reproducible.
+ * `.current-facts` is a flex row whose max-content width is a LayoutUnit layout
+ * value, not a device-pixel-rounded paint value: `factsW` measures 312.0 and the
+ * readout-ink-to-fact-strip gap measures 22.9063, byte-identical, at dpr 1.0, 1.1,
+ * 1.25, 1.5, 1.75, 2.0, 2.5 and 3.0. DPR moves nothing here.
+ *
+ * What DOES move the boundary is scrollbar width. A media query tests `innerWidth`
+ * while the container lays out in `clientWidth`, so that 15-17px delta is the whole
+ * margin. Scanning 1200-1330 at 1px with a 7-character readout and three 7-character
+ * facts: the last colliding 3-column width is 1272 on a 15px scrollbar (gap -0.09px)
+ * and 1274 on a 17px one. So 1272 was wrong for a reason having nothing to do with
+ * scaling, and would still be wrong on a 17px-scrollbar platform.
+ *
+ * Hence 1286: it clears the 17px worst case with 12px to spare. Real headroom is
+ * larger than that -- a collision needs `factsW` around 334.9px against a measured
+ * 312.0, so the strip would have to grow 7.3% to break, and it is DPR-invariant.
+ *
+ * DO NOT conclude from the DPR result that 1272 is fine. The scrollbar is what
+ * makes 1272 wrong, and that is the half of the reasoning that does not move.
+ *
+ * The cost is that the hero stays stacked 14px longer, at widths where the
+ * container is already at its 1232px cap.
+ *
+ * Two things an earlier version of this comment got wrong, both caught by
+ * measurement: it modelled factsW as a fixed 284.906px, which is the SIX-character
+ * case rather than the worst case; and it claimed a scrollbar "leaves 28px of
+ * surplus", which is inverted — a scrollbar SUBTRACTS from the layout width. It
+ * also conflated innerWidth with clientWidth: a media query tests innerWidth
+ * (scrollbar-inclusive) while the container is laid out in clientWidth
+ * (scrollbar-exclusive), and that 15-16px was the whole margin.
+ *
+ * DELIBERATELY NOT done by widening `@media (max-width: 1199px)` to 1272px. That
+ * block also carries the page gutter, the TWO-COLUMN details grid, a 420px map
+ * height, `.brand` and `.auto-refresh`; widening it would push all of those into
+ * 1200-1272px, which would re-break the details grid at three columns — where the
+ * bottom-border re-arm in the 1199px block now depends on that grid being two
+ * columns — and would shrink the map on desktop. Only the two declarations that
+ * A-prime actually needs are duplicated here. */
+@media (min-width: 1200px) and (max-width: 1286px) {
+  .current-grid { grid-template-columns: 240px minmax(0, 1fr); }
+  .current-facts { grid-row: 2; grid-column: 1 / -1; }
+}
+
+@media (max-width: 1199px) {
+  :root { --nw-gutter: var(--nw-5); }
+  .current-grid { grid-template-columns: 240px minmax(0, 1fr); }
+  /* BOTH properties, BOTH scoped to 900-1199px. The scoping of `grid-column` is
+   * load-bearing, not belt-and-braces — this bit twice.
+   *
+   * `#current-facts` is the third child of `.current-grid`, and CSS Grid
+   * auto-placement seats any item with a definite COLUMN position (step 5.1)
+   * BEFORE the auto-positioned siblings. So `grid-column: 1 / -1` alone put the
+   * fact strip on row 1 and pushed the place block and the temperature down to
+   * row 2, inverting the laptop layout and demoting the one number the page
+   * exists to show. A definite ROW is required to seat it underneath them.
+   *
+   * But `grid-column` must be scoped out of 640-899px too, where the grid is a
+   * SINGLE track. There, `1 / -1` is still a definite column, so the fact strip
+   * was again seated first, at row 1, above the city name. That stayed hidden for
+   * as long as `.current-block { order: -1 }` re-sorted the other two items above
+   * it — the `order` was masking the misordering. Narrowing `order` to <=639px to
+   * match spec §8 Tablet exposed it at once: with no `order` in the 640-899 band
+   * the stack must come from document order, which requires EVERY grid item to be
+   * fully auto there.
+   *
+   * So: from 640-899px the stack is pure document order (place, block, facts) per
+   * §8 Tablet; at <=639px `order: -1` re-sorts to block/place/facts per §8 Mobile;
+   * at 900-1199px both properties seat facts on row 2 of two columns. */
+  @media (min-width: 900px) {
+    .current-facts { grid-row: 2; grid-column: 1 / -1; }
+  }
+  .fact:first-child { padding-left: 0; }
+  .details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .details > .detail-cell:nth-child(3n) { border-right: 1px solid var(--nw-rule); }
+  .details > .detail-cell:nth-child(2n) { border-right: none; }
+  /* Two columns: 15 cells is 7 full rows plus a lone 15th, so the last row is
+   * ONE cell wide and only cell 15 loses its rule.
+   *
+   * The `-n + 1` that used to be here only re-CONFIRMED cell 15. It did not
+   * re-ARM cells 13 and 14, which the base `-n + 3` rule — derived for three
+   * columns — had already stripped: in two columns cell 13 is row 7 column 1
+   * and sits directly above cell 15, so it needs its rule back. Measured, the
+   * Moonrise/Moon-phase and Daylight rows read as one unbroken block at every
+   * width from 640 to 1199 AND in print.
+   *
+   * Both rules stay INSIDE this media query. Appended unscoped they would add a
+   * 1px border under cells 13 and 14 of the three-column last row at 1200+ —
+   * breaking desktop to fix the two-column band. Verified at 14 widths with the
+   * scope attached. */
+  .details > .detail-cell:nth-last-child(-n + 3) { border-bottom: 1px solid var(--nw-rule); }
+  .details > .detail-cell:last-child { border-bottom: none; }
+  /* Same reasoning for the right rule. Cell 15 is odd AND a multiple of 3, so
+   * `:nth-child(3n)` re-armed to 1px matches it and `:nth-child(2n)` does not —
+   * leaving a hairline hanging down the midpoint of the panel from a cell that
+   * sits alone in column 1 with empty panel to its right. (0,3,0) and later than
+   * both rules above, so it wins. No effect at >=1200 (its own `3n` rule already
+   * clears it) or <=639 (that block's `:last-child` says the same thing). */
+  .details > .detail-cell:last-child { border-right: none; }
+  .weather-map { height: 420px; }
+  .brand { min-width: 0; }
+  .auto-refresh { display: none; }
+}
+
+@media (min-width: 900px) {
+  /* Full-bleed map band (§5.7). The heading stays in the container. */
+  /* Full-bleed at >=900px.
+ *
+ * `100vw` resolves against the viewport INCLUDING a classic scrollbar, so the
+ * band was 15px wider than the visible area and `html { overflow-x: clip }`
+ * silently cropped it. No CSS viewport unit excludes the scrollbar, so JS
+ * measures it into `--nw-sb` (see `setScrollbarWidth` in app.js).
+ *
+ * The same correction has to appear in the MARGIN, not just the width. A
+ * block-level box in LTR resolves an over-constrained `margin-inline` by
+ * honouring `margin-left` and discarding `margin-right`, so
+ * `calc(50% - 50vw)` still carries the full `50% * sb` error: correcting only the
+ * width moved the defect from "cropped on both edges" to "cropped 7.5px on the
+ * left, with a 7.5px strip of page background down the right". Using the same
+ * corrected width in both keeps the two consistent, and degrades to exactly the
+ * pre-`--nw-sb` behaviour when JS has not yet run. */
+#map-stage {
+  --nw-vw: calc(100vw - var(--nw-sb, 0px));
+  width: var(--nw-vw);
+  margin-inline: calc(50% - var(--nw-vw) / 2);
+}
+}
+
+@media (max-width: 899px) {
+  /* Gutter is declared on :root so the masthead, the page column and the
+     city strip all move together. It used to be set on .nw-page and
+     .locations only, so the header kept the :root value and the two left
+     edges disagreed at 900-1199 and at <=639. */
+  :root { --nw-gutter: var(--nw-5); --nw-section-gap: var(--nw-7); }
+
+  /* Masthead wraps to two rows: brand + controls, then search at 100%. */
+  /* `padding-block`, never the `padding` shorthand. The shorthand reset
+   * `padding-inline` to a hard-coded 16px, which silently discarded the
+   * `max()` centring expression on the base rule and put the masthead 8px proud
+   * of the page column at <=639px and 6px at <=380px — the exact misalignment
+   * hoisting `--nw-gutter` to `:root` was meant to cure. The wrap and the
+   * row-gap are what this breakpoint actually needed. */
+  .site-header { flex-wrap: wrap; padding-block: var(--nw-2); row-gap: var(--nw-2); }
+  .search-wrap { order: 3; flex: 1 1 100%; max-width: none; }
+
+  .current-grid { grid-template-columns: minmax(0, 1fr); }
+  /* NO `order` here, and this is deliberate. Spec §8 Tablet specifies the stack
+   * as place block, then icon + temperature, then the fact strip — which is
+   * exactly the document order, so nothing needs re-sorting at this width.
+   *
+   * The rule used to sit at `max-width: 899px`, promoting the temperature above
+   * the city name one breakpoint earlier than §8 Mobile asks for. Narrowing it to
+   * `max-width: 639px` below is what brings tablet back in line with the spec.
+   *
+   * It is also load-bearing in the other direction: at <=899px the grid is a
+   * single track, so the stack is decided purely by order-modified document
+   * order. That is why the 900-1199px band needs an explicit `grid-row: 2` for
+   * `#current-facts` — see the 1199px block above. */
+  .current-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .fact { padding-inline: 0; border-left: none; border-top: 1px solid var(--nw-rule); padding-top: var(--nw-3); }
+
+  .section-pair { grid-template-columns: minmax(0, 1fr); }
+  .insight-list { grid-template-columns: minmax(0, 1fr); }
+  .weather-map { height: 360px; }
+  .daily-sun { display: none; }
+  /* Ten tracks minus `.daily-sun`, which is display:none and therefore not a
+     grid item: nine tracks for nine items. */
+  .daily-row { grid-template-columns: 88px 32px 18px minmax(0, 1fr) 64px 44px 88px 44px 48px; }
+}
+
+@media (max-width: 639px) {
+  :root { --nw-gutter: var(--nw-3); --nw-section-gap: var(--nw-7); }
+  body { padding-bottom: calc(52px + env(safe-area-inset-bottom)); }
+
+  .panel { border-radius: var(--nw-r-sm); box-shadow: none; padding: var(--nw-5); }
+  .section-current { padding-bottom: var(--nw-5); }
+  .brand-name { font-size: 1.125rem; }
+  /* The cover link loses its label at phone width, leaving the arrow. The
+   * masthead row is already carrying the brand, three 32px toggles and the
+   * provenance badge, and this is the cheapest 46px to give back without
+   * dropping the control — the arrow still carries an accessible name. */
+  .cover-link { padding: 0 var(--nw-2); margin-right: var(--nw-1); }
+  .cover-label { display: none; }
+  .auto-refresh { display: none; }
+  .section-head { flex-wrap: wrap; row-gap: var(--nw-1); }
+  .section-meta { width: 100%; text-align: left; }
+
+  /* Icon above the number: the mobile convention (spec §8 Mobile). */
+  .current-block { flex-direction: column; gap: var(--nw-3); }
+  /* And the whole hero block above the place block, per §8 Mobile. Scoped to
+   * this breakpoint so 640-899px keeps the spec's document order. `order` only
+   * re-sorts siblings of the same grid, so it must be on the grid ITEM
+   * (`.current-block`), not on `.current-grid`. */
+  .current-block { order: -1; }
+  .current-icon .lucide { width: 56px; height: 56px; }
+  .current-temp { font-size: clamp(4rem, 22vw, 6rem); }
+  .current-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: var(--nw-3); }
+  .fact-label { font-size: var(--nw-text-xs); }
+
+  /* ONE column. Every cell is the last (and only) column in its row, so no cell
+   * may carry a right rule at all.
+   *
+   * The previous rules here re-armed `:nth-child(2n)` with a 1px right rule,
+   * which is exactly backwards for a single column: `max-width: 1199px` also
+   * matches at <=639px, so cells 3, 6, 9, 12 and 15 kept that rule and the list
+   * rendered as a comb of 1px vertical ticks down 14 of its 15 cells. The
+   * `:not(:last-child)` form is (0,3,0) — the same specificity as the
+   * `:nth-child(2n)`/`:nth-child(3n)` rules — and wins on source order, so no
+   * specificity war is needed.
+   *
+   * `:not(:last-child)` also re-arms the bottom rule that the 3-column
+   * `:nth-last-child(-n + 3)` had stripped from cells 13-15 and the 2-column
+   * `-n + 1` from cell 15. Last row is one cell wide, so `:last-child` is the
+   * only cell that drops it. */
+  .details { grid-template-columns: minmax(0, 1fr); }
+  .details > .detail-cell:not(:last-child) {
+    border-right: none;
+    border-bottom: 1px solid var(--nw-rule);
+  }
+  .details > .detail-cell:last-child { border-right: none; border-bottom: none; }
+
+  .astronomy { grid-template-columns: minmax(0, 1fr); }
+  .astro-cell,
+  .astro-light .astro-cell { border-bottom: 1px solid var(--nw-rule); }
+  .astro-cell:last-child,
+  .astro-light .astro-cell:last-child { border-bottom: none; }
+  .aqi-components { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .aqi-comp:nth-child(3n + 1) { border-left: 1px solid var(--nw-rule); }
+  .aqi-comp:nth-child(2n + 1) { border-left: none; }
+  .air-quality-head { flex-direction: column; gap: var(--nw-3); }
+
+  .weather-map { height: 280px; border-radius: var(--nw-r-sm); }
+  /* 7 layer names cannot fit over a 280px map: move the switcher below it. */
+  #map-layer-switch {
+    position: static;
+    max-width: none;
+    margin-top: var(--nw-3);
+    border-radius: var(--nw-r-pill);
+  }
+  /* Kept above Leaflet's attribution strip here too, for the same reason as the
+   * base rule. `--nw-3` would put it back underneath. */
+  .map-recentre { right: var(--nw-3); bottom: 40px; }
+  .map-caption { display: block; }
+
+  /* Drop `.daily-sun`, `.daily-moon` and `.daily-bar-wrap`: all three are
+     display:none, so seven items remain and seven tracks are declared. The old
+     six-track rule pushed `.daily-hi` onto an implicit second row of every
+     single row, doubling the table's height and ruling through its middle.
+     The gap and padding tighten to buy the condition text room at 320px. */
+  .daily { min-width: 0; }
+  /* Six items and six tracks. `.daily-aqi` joins `.daily-moon` and
+   * `.daily-bar-wrap` in being dropped — and its 42px track goes with it, since
+   * keeping the track while hiding the cell is the miscount that used to double
+   * this table. Per-day AQI is the one reading here that the Air Quality panel
+   * already states in full, so the condition text is the better thing to keep. */
+  .daily-row {
+    /* The day column is 64px, not 56px. "Tomorrow" is `daily[1]` on EVERY payload
+   * and measures 60.15px in Plex Sans 600 13px, so at 56px it overflowed by
+   * 4.15px — far enough to consume the whole 4px column-gap and touch the 24px
+   * icon track, which has zero slack because a 24px lucide fills a 24px track.
+   * `.daily-desc`'s `1fr` is 100px at 320px and its longest single word
+   * ("thunderstorm") is 80.46px, so the 8px is genuinely free there. */
+  grid-template-columns: 64px 24px minmax(0, 1fr) 28px 32px 32px;
+    column-gap: var(--nw-2);
+    padding: 0 var(--nw-2);
+  }
+  /* At the floor width the masthead row 1 is brand + three 32px icon buttons +
+   * the source badge, which overflows the content box by a few px. The badge is
+   * `flex: 0 0 auto` and cannot shrink, and `html { overflow-x: clip }` eats
+   * the excess. Nothing is lost: the footer already credits the data source. */
+  /* The badge costs a third masthead row between 381px and 398px, taking the
+   * masthead from 85px to 115.39px. R3 measured that as cosmetic-only, and it is,
+   * but it is deliberately NOT raised to 399px to hide it: this is the sample-data
+   * disclosure, which is the load-bearing mitigation for `mapCurrent` now throwing
+   * on a malformed payload, and it is worth more than 30px of header height on the
+   * narrow band of widths where the extra row appears. */
+  @media (max-width: 380px) {
+    .data-source { display: none; }
+  }
+
+  .daily-moon { display: none; }
+  .daily-bar-wrap { display: none; }
+  /* The `partial` marker on its own line, in a 32px track. At 11px it measures
+   * 33.77px — over by 1.77px on its own — so it drops to 10px here, which is
+   * 30.7px and fits. It is a qualifier, not a figure, and 10px is the size
+   * `.fact-label` already uses for the same role. */
+  .daily-partial { font-size: 10px; }
+  .daily-aqi { display: none; }
+  /* Fixed tracks + gaps + padding left the condition 44px at 320px — about six
+   * characters, so "Thunderstorm with light rain" read "Thund…". Reclaiming the
+   * AQI track and the spec's 56px day column brings it to ~98px, and wrapping
+   * onto a second line fits the whole phrase. */
+  .daily-desc {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.25;
+  }
+
+  .alert-item { grid-template-columns: minmax(0, 1fr); }
+  .alert-badge { justify-self: start; }
+
+  .jump-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    display: flex;
+    height: 52px;
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--nw-surface);
+    border-top: 1px solid var(--nw-border);
+  }
+  .jump-link {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    font: 600 var(--nw-text-xs)/1 var(--nw-font);
+    color: var(--nw-text-muted);
+    border-top: 2px solid transparent;
+  }
+  .jump-link[aria-current='true'] { color: var(--nw-accent); border-top-color: var(--nw-accent); }
+  .jump-link:hover { text-decoration: none; }
+}
+
+@media (max-width: 380px) {
+  :root { --nw-gutter: 10px; }
+  .current-temp { font-size: 3.75rem; }
+  .fact-label { font-size: 10px; }
+  .jump-link-extra { display: none; }
+}
+
+/* The masthead wraps to two rows at <=899px and measures ~96px tall there, so
+ * 88px left the top of every section heading underneath the sticky header after
+ * a jump-bar or skip-link activation (2.4.11 Focus Not Obscured). */
+section[id] { scroll-margin-top: 104px; }
+/* Every id-bearing band inside the forecast, not just the seven `<section>`s.
+ * The skip link targets `#forecast` and falls back to `#main` — plain `<div>`s,
+ * so `section[id]` missed them and the first heading after a skip landed under
+ * the sticky header. `#alerts`, `#insights` and `#section-pair` are `<div>`s too
+ * and measured 0px; no link targets them today, but the guard should not depend
+ * on that staying true. */
+#forecast,
+#main,
+#alerts,
+#insights,
+#section-pair { scroll-margin-top: 104px; }
+
+/* ─── §9.11 Motion ──────────────────────────────────────────────────────────
+   Three moments, not thirty. On a data page, motion that is not explaining
+   something is noise, and the page has to stay readable the instant it paints —
+   so nothing here delays content, and every animation is transform/opacity/stroke
+   only (compositor-friendly, and no layout thrash on the fixed-track grids).
+
+   1. `panel-in` — a staggered reveal. The masthead and the panels come up in
+      document order with a 40ms step. `--nw-reveal-d` is a counter custom
+      property; each panel increments it, and the calc() turns it into a delay.
+      This is the single highest-impact moment on the page and it costs one rule.
+   2. `arc-draw` — the daylight arc draws itself with stroke-dashoffset. It is
+      literally a gauge being calibrated, and the stroke is the only thing
+      animating.
+   3. `bar-grow` — the daily range bars scale in from the centre, so the strip
+      reads as instruments settling rather than as text arriving.
+
+   All three are inside `@media (prefers-reduced-motion: no-preference)`, so the
+   reduced-motion block below does not have to know they exist. Gating at the
+   source is safer than neutralising later: an animation declared and then
+   cancelled still costs a style recalculation. */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes panel-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes arc-draw {
+    from { stroke-dashoffset: var(--arc-len, 188.5); }
+    to   { stroke-dashoffset: 0; }
+  }
+  @keyframes bar-grow {
+    from { transform: scaleX(0.2); opacity: 0.35; }
+    to   { transform: none; opacity: 1; }
+  }
+  @keyframes live-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.35; }
+  }
+
+  /* `nth-of-type` over the page's top-level bands, so the delay grows down the
+   * page the way the eye travels.
+   *
+   * `#main .panel`, NOT `#main > .panel`. The direct children of `<main>` are
+   * `.empty-state` and `#forecast`; every `.panel` is a grandchild, so the child
+   * combinator matched nothing at all. The effect was a two-element stagger —
+   * `.site-header` at delay 0 and `.locations-bar` at 40ms — with the
+   * `counter-reset` below it equally inert. The motion design, three comments
+   * and two spec sections described a document-order cascade that never ran. */
+  #main .panel,
+  .site-header,
+  .locations-bar {
+    counter-increment: nw-panel;
+    animation: panel-in 420ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+    animation-delay: calc(var(--nw-reveal-step) * (counter(nw-panel) - 1));
+  }
+  body { counter-reset: nw-panel; }
+  #forecast { counter-reset: nw-panel; }
+
+  /* The arc. `--arc-len` is set inline by app.js from the real path length when
+   * it can measure it, and falls back to a close approximation of a 60px-radius
+   * semicircle otherwise. A wrong length is cosmetically imperfect; a missing one
+   * means the arc never appears, so the fallback is not optional. */
+  .sun-arc-progress {
+    stroke-dasharray: var(--arc-len, 188.5);
+    animation: arc-draw 900ms cubic-bezier(0.3, 0.8, 0.3, 1) 240ms backwards;
+  }
+
+  .daily-bar-range { transform-origin: center; animation: bar-grow 460ms cubic-bezier(0.2, 0.8, 0.3, 1) backwards; }
+  .daily-row:nth-child(2) .daily-bar-range { animation-delay:  40ms; }
+  .daily-row:nth-child(3) .daily-bar-range { animation-delay:  80ms; }
+  .daily-row:nth-child(4) .daily-bar-range { animation-delay: 120ms; }
+  .daily-row:nth-child(5) .daily-bar-range { animation-delay: 160ms; }
+  .daily-row:nth-child(6) .daily-bar-range { animation-delay: 200ms; }
+  .daily-row:nth-child(7) .daily-bar-range { animation-delay: 240ms; }
+
+  /* The "live data" badge breathes, slowly, and then STOPS.
+   *
+   * The old justification answered 2.3.1 and stopped there: 2.4s is far below
+   * the flash threshold, and the animation is opacity only. Both true, and both
+   * beside the point. 2.2.2 is a different criterion with a different test —
+   * anything that moves for more than five seconds needs a mechanism to pause,
+   * stop or hide it. This ran `infinite`, so a reader with a vestibular or
+   * migraine sensitivity got a 0.42Hz opacity cycle they could not switch off,
+   * on every page view, forever.
+   *
+   * Six iterations is ~15s: long enough to draw the eye to a live badge on
+   * arrival, and finite, so 2.2.2 is satisfied by the animation ending on its
+   * own and no control is needed. The badge's state is carried by the words "Live
+   * data" beside it, so nothing depends on the motion continuing. */
+  .data-source[data-source='live']::before { animation: live-pulse 2.4s ease-in-out 600ms 6; }
+}
+
+/* Interactive affordances. Short, and only on things that are actually
+ * interactive — a data row that is not clickable does not get a hover state. */
+@media (prefers-reduced-motion: no-preference) {
+  .loc-chip,
+  .icon-btn,
+  .map-layer-btn,
+  .jump-link,
+  .aqi-scale-bar { transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease; }
+  .loc-chip:hover,
+  .map-layer-btn:hover { transform: translateY(-1px); }
+  .loc-chip:active,
+  .map-layer-btn:active { transform: none; }
+  /* A reading is taken when you hover a row: the row lifts a hair and its rule
+   * warms. The bar itself brightens, which is the instrument responding. */
+  .daily-bar-range,
+  .hour-col .hour-temp { transition: color 160ms ease, opacity 160ms ease; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+     /* `animation-delay` too, and this clause is the one that makes the block
+        * mean anything. `animation-fill-mode: backwards` paints the FIRST frame
+        * during the delay, so zeroing only the duration left `.d6` — the whole
+        * Specification section — invisible for 390ms, and the 7th daily range bar
+        * invisible for 240ms, for exactly the readers who asked for less motion.
+        * The motions are gated at source (§3.9), so this is a belt to that
+        * braces: it also catches anything added later without the gate. */
+     animation-delay: 0s !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .leaflet-fancy-anim .leaflet-tile,
+  .leaflet-fancy-anim .leaflet-zoom-animated .leaflet-zoom-anim { transition: none !important; }
+}
+
+/* ─── §7.4 Print ─────────────────────────────────────────────────────────── */
+@media print {
+  /* Paper is white, so every token that carries text or a boundary has to be
+   * re-solved against white. `--nw-text-faint` in particular is used by
+   * `.daily-aqi`, `.hour-feels`, `.hour-mm`, `.map-caption` and the AQI scale
+   * labels, and left un-overridden it printed its dark-theme value at ~3.7:1 on
+   * paper. The un-overridden dark FILLS were the mirror problem: with
+   * "Background graphics" on, `--nw-surface-sunken` and `--nw-surface-alt` stayed
+   * dark while `--nw-text` became #000, so the daily zebra rows and the "Now"
+   * column printed as near-black bands containing near-invisible text. */
+  /* Paper is white, so EVERY token that carries text or a boundary has to be
+   * re-solved against white — not just the seven neutrals. The previous block
+   * overrode 7 of 40 and let 33 through, including every semantic ink, so:
+   *   - the daily zebra rows printed as near-black bands with #000 text (1.35:1)
+   *   - the "Now" hourly column likewise (1.21:1)
+   *   - the AQI band lost its number, its category word (the only non-colour
+   *     signal, 1.4.1) and its coloured segment, all at ~1.7:1
+   *   - every alert severity badge printed at ~1.1-1.6:1 on its tint
+   * The selector is `:root, .theme-dark` so light-theme printing is covered too.
+   * Fills stay light rather than white so the zebra striping and the "Now"
+   * highlight survive; #f2f2f2 under #000 is ~18.9:1. */
+  :root,
+  .theme-dark {
+    --nw-page: #fff;
+    --nw-surface: #fff;
+    --nw-header: #fff;
+    --nw-surface-alt: #fafbfc;
+    --nw-surface-sunken: #f2f5f8;
+    --nw-accent-soft: #ebf3fc;
+
+    --nw-text: #000;
+    --nw-text-body: #333;
+    --nw-text-muted: #555;
+    --nw-text-faint: #65707f;
+
+    --nw-border: #ccc;
+  /* The atmosphere is not printed. Every wash, the grid and the grain go to
+   * zero, the sheen goes to nothing (a highlight on paper is a printing
+   * artefact, not a design), and the plate shadow flattens to a hairline. A
+   * forecast page is printed to be carried outside — ink is precious and grain
+   * is not worth a cartridge. The chamfer notch stays: it is a 1px line, and it
+   * is the only thing that survives to say "instrument" on paper. */
+  --nw-mesh-1: transparent;
+  --nw-mesh-2: transparent;
+  --nw-mesh-3: transparent;
+  --nw-grid-line: transparent;
+  --nw-grain: none;
+  --nw-grain-opacity: 0;
+  --nw-sheen: transparent;
+  --nw-shadow-card: none;
+  --nw-elev-1: none;
+  --nw-elev-2: none;
+  /* The gauge scale under the hero readout prints — a 1px tick row is ink the
+   * reader spends on something. */
+  --nw-tick-pitch: 6px;
+    /* Token parity for the one remaining colour-bearing token the print block
+     * missed. `--nw-text-invert` is white in light and near-black in dark, and
+     * the print block had no override — so printing from dark theme resolved it
+     * to #10151e on #000 at 1.15:1. Its only reachable consumer is `.toast`,
+     * which has a 4.2 s window; `.map-layer-btn[aria-pressed]` is inside a
+     * `display: none !important` parent. The reachable case is a 1.15:1 toast
+     * printed on paper, so it gets a print value like every other token. */
+    --nw-text-invert: #fff;
+    --nw-border-strong: #bbb;
+    /* Token parity. Every other token is re-solved for paper in this block, and
+     * the dark value of `--nw-border-input` would resolve to 2.9:1 on white —
+     * under the 3:1 floor the token exists to clear. Latent only: `#search-form`
+     * is `display: none !important` in print, so the field is never painted. */
+    --nw-border-input: #6b7c93;
+    --nw-rule: #ddd;
+
+    --nw-accent: #1d6bbf;
+    --nw-accent-hover: #10459b;
+    --nw-accent-line: #6094df;
+
+    --nw-temp-high: #c05010;
+    --nw-temp-low: #2879ab;
+    --nw-temp-track: #c9d2de;
+
+    --nw-precip: #0e76a7;
+    --nw-precip-soft: #def3fc;
+
+    --nw-uv-low: #227e50;
+    --nw-uv-moderate: #856c07;
+    --nw-uv-high: #af5609;
+    --nw-uv-very-high: #d32234;
+    --nw-uv-extreme: #9135b6;
+
+    --nw-aqi-good: #1f8452;
+    --nw-aqi-moderate: #996f06;
+    --nw-aqi-unhealthy-sensitive: #c4550a;
+    --nw-aqi-unhealthy: #de2721;
+    --nw-aqi-very-unhealthy: #b42d8b;
+    --nw-aqi-hazardous: #9836bf;
+
+    --nw-sev-minor: #5e7088;
+    --nw-sev-moderate: #8f6806;
+    --nw-sev-severe: #d7361d;
+    --nw-sev-extreme: #912eb8;
+    /* The severity tint is an alpha wash that reads as a grey block in greyscale
+     * print; the word beside it is the real signal, so drop the wash. */
+    --nw-sev-tint: transparent;
+  }
+  /* The daily AQI cell is the one place on the page where colour IS the data:
+     `.daily-aqi[data-aqi-cat]` paints the number in its category's ink. Those
+   * six tokens are solved against `#fff`, but the row it lands on is the daily
+   * zebra — `#fafbfc` and `#f2f5f8` — which put `moderate` at 4.38:1 and
+   * `unhealthy-sensitive` at 4.36:1. Both fail 1.4.3.
+   *
+   * The fix is not to re-solve six colours for two zebra shades. On paper,
+   * colour is the first thing the process discards, so the cell drops the colour
+   * channel entirely and prints in the same ink as every other figure in the
+   * table. That is a better answer to 1.4.1 than a colour that fails 1.4.3:
+   * the number is still there, and nothing depended on its hue to be legible. */
+  .daily-aqi[data-aqi-cat] { color: var(--nw-text); }
+  .icon-btn,
+  #jump-bar,
+  #search-form,
+  #search-results,
+  .locations-bar,
+  .map-layer-switch,
+  #map-opacity,
+  .map-recentre,
+  .map-caption,
+  .brand-tag { display: none !important; }
+  /* Everything interactive, and everything that exists only on screen.
+   *
+   * The spec listed ten selectors here and the block implemented ONE of them, so
+   * a printed forecast carried the search box, all four masthead toggles, the
+   * jump bar and the featured-city strip — every one of them dead paper, and the
+   * search field a box for typing into. A printed page keeps the brand (it
+   * identifies the source) and the provenance badge (it says whether the numbers
+   * are live), because both carry information. Nothing that needs a pointer or a
+   * keyboard survives.
+   *
+   * `.cover-link` is in this list by the same reasoning: "← Cover" on paper is a
+   * link nobody can follow, printed in the one place the reader might actually
+   * take with them. */
+  .icon-btn,
+  .cover-link,
+  .link-btn,
+  #jump-bar,
+  #search-form,
+  #search-results,
+  #map-layer-switch,
+  #map-opacity,
+  #map-recentre,
+  .map-caption,
+  #locations-bar { display: none !important; }
+  .panel { box-shadow: none; break-inside: avoid; }
+  /* The bezel sheen and the corner chamfer are screen affordances. The chamfer
+   * is 1px and survives (see the token note above); the sheen does not, because
+   * a white-to-transparent gradient printed with "Background graphics" on puts
+   * a grey band across the top third of every panel. */
+  .panel::before { background: none; }
+  .panel { background-image: none; }
+  #section-map { display: none; }
+  #section-current { break-after: avoid; }
+  .hour-col,
+  .daily-row,
+  .detail-cell,
+  .alert-item { break-inside: avoid; }
+  /* The hourly strip is a row of non-wrapping 58px flex columns — 928px for the
+   * 16 the provider actually returns, inside a ~584px panel content box (US Letter at 1in
+ * margins is 624px; the panel's own padding takes it to 584px. An earlier version of this
+ * comment said ~717px, which is not any page size — the reflow conclusion is unchanged, the
+ * arithmetic was not. Removing
+   * `overflow` does not reflow it: 9 of the 16 columns paint outside the page box
+   * and are then overpainted by the following sections. Re-flow the strip as a
+   * 7-column grid instead, so all 16 hours actually print. The daily table is
+   * 676px wide and already fits.
+   *
+   * (This comment once said 48 columns and 2784px. The provider caps the strip
+   * at 16 via `slice(0, 16)` in `mapHourlyFromForecast`; 48 was from a plan for
+   * a 14-day product. The reflow is necessary at either size — a 49-slot grid
+   * holds 48 items in 7 full rows — so the fix was never wrong, only the
+   * arithmetic in the explanation.) */
+  #hourly-scroll,
+  #daily-scroll { overflow: visible !important; }
+  /* ROW-major, not column-major.
+   *
+   * `grid-auto-flow: column` fills each column in turn, so with 7 explicit rows
+   * the top row was hours 1, 8, 15, 22, 29, 36, 43 and the strip read as a
+   * scrambled sequence — the worst possible failure for a time series. Declaring
+   * the COLUMNS and leaving the default row flow puts 1-7 across the top, 8-14
+   * beneath, which is how a person reads a forecast off a printed page. The
+   * explicit `repeat(7, auto)` row count also means NO implicit row is ever
+   * created, so the last partial row cannot grow a `border-bottom` through the
+   * middle of itself. At 16 items that is 2 full rows plus a 2-item third. */
+  /* min-width: max-content is what makes the table scroll sideways on screen.
+   * In print the scroller is removed, so the list would then be laid out at its
+   * max-content width and clipped by html { overflow-x: clip }. */
+  .daily { min-width: 0; }
+  #hourly {
+    display: grid;
+    grid-template-columns: repeat(7, 58px);
+    grid-template-rows: repeat(7, auto);
+  }
+  .hour-col { width: auto; }
+  /* The "Now | forecast" divider marks index 1, which in the reflowed grid is
+   * the FIRST cell of the second column — so it printed between hours 7 and 8
+   * instead. On paper the whole strip is forecast data anyway. */
+  #hourly .hour-divider { border-left-color: var(--nw-rule); }
+  /* The sparkline is 2822x96. `max-width: 100%` scales it to ~584x20, so the
+   * 2px stroke printed at 0.5px and the 9px axis labels at 2.3px — present but
+   * unreadable, which is worse than absent because it reads as a rendering
+   * artefact. Spec section 5.5 calls the curve a trend, not data; the numbers
+   * are all in the grid below it. */
+  .hourly-chart-wrap { display: none; }
+  a[href^='http']::after { content: ' (' attr(href) ')'; font-size: 10px; color: #555; }
+}
+
+/* Leaflet's own chrome ships stock-white controls. On the dark CARTO raster
+ * that is two bright boxes in an otherwise flat dark reader theme. The filter
+ * here is on the CONTROL, not the tile pane — filtering `.leaflet-layer` is
+ * what the spec forbids, because it desaturates the radar legend, the one layer
+ * carrying a colour key. */
+.theme-dark .leaflet-control-zoom { border-color: var(--nw-border); }
+/* NO `filter` here. An earlier version had `invert(1) hue-rotate(180deg)`, which
+ * operates on the COMPOSITED output: the dark `background-color` inverted back to
+ * white, so the rule was a visual no-op and left Leaflet's stock white box — the
+ * exact thing it was added to remove. The `background-color` + `color` pair
+ * already does the job. */
+.theme-dark .leaflet-control-zoom a {
+  background-color: var(--nw-surface);
+  color: var(--nw-text-body);
+  border-bottom-color: var(--nw-border);
+}
+.theme-dark .leaflet-control-zoom a:hover { background-color: var(--nw-surface-sunken); }
+/* R2 found the ONE AA contrast failure in the whole sweep: 16 of 8384
+ * measurements, all the same element, light theme only --
+ *
+ *   a, 12px/400, #0078A8 on #fdede8/#fae4e9/#fae3e8/#fbe5ea -> 4.05-4.34:1
+ *   (needs 4.5)
+ *
+ * That is Leaflet's attribution strip. The app already restyled it, but only in
+ * dark theme via `.theme-dark .leaflet-control-attribution`. Light theme was left
+ * on Leaflet defaults: a translucent white box over live map raster, links
+ * #0078A8. The ground is whatever the map happens to be showing, which is why the
+ * sampled failures were light pink -- mostly pale water and beach.
+ *
+ * THE SELECTORS MUST MIRROR LEAFLET'S, and that is not a stylistic note. Leaflet
+ * 1.9.4 ships:
+ *
+ *   .leaflet-container .leaflet-control-attribution  (0,2,0)  background, margin
+ *   .leaflet-control-attribution                     (0,1,0)  padding, color
+ *   .leaflet-container a                             (0,1,1)  color: #0078A8
+ *
+ * The obvious remedy -- drop the `.theme-dark` prefix and leave
+ * `.leaflet-control-attribution` at (0,1,0) -- is a NO-OP for the background. It
+ * loses to (0,2,0) outright, whatever the load order. I wrote that version first:
+ * it read correctly in the file and would have left the translucent white box
+ * exactly where it was, so the text colour would have changed on a ground nobody
+ * chose. R2 reasoned from the dark rule that had been working -- but the dark rule
+ * worked BECAUSE the `.theme-dark` prefix bought the extra class it needed to win.
+ *
+ * So the prefix is swapped for `.leaflet-container` rather than dropped: equal
+ * specificity, and this file loads after leaflet@1.9.4 in index.html, so it wins.
+ * The link rule is written at (0,2,1) to clear `.leaflet-container a` outright
+ * rather than tie it and lean on source order twice.
+ *
+ * Dark theme is unchanged by this -- it measured 6.66 for text and 7.76 for the
+ * link on --nw-surface-sunken. Light theme moves off 4.05-4.34 onto that same
+ * pair, which the rest of the codebase already measures as passing.
+ *
+ * --nw-surface-sunken and --nw-text-muted are themselves theme-scoped custom
+ * properties, so one rule serves both themes without a second declaration. */
+.leaflet-container .leaflet-control-attribution {
+  background: var(--nw-surface-sunken);
+  color: var(--nw-text-muted);
+}
+.leaflet-container .leaflet-control-attribution a { color: var(--nw-accent); }

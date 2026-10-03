@@ -1,0 +1,30 @@
+{
+  "name": "nimbus-weather-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production-grade weather platform with Expo mobile app, Express API, PostgreSQL, Redis, Docker, and CI.",
+  "workspaces": [
+    "backend",
+    "mobile",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev:api": "npm run build -w @nimbus/shared && npm run dev -w @nimbus/api",
+    "local:api": "npm run build -w @nimbus/shared && npm run dev -w @nimbus/api",
+    "dev:mobile": "npm run build -w @nimbus/shared && npm run start -w @nimbus/mobile",
+    "local:web": "npm run serve:web",
+    "dev:compose": "docker-compose up --build",
+    "migrate": "node backend/scripts/run_migrations.js",
+    "db:seed": "node backend/scripts/seed.js",
+    "serve:web": "npx http-server frontend -p 8080 -c-1",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:coverage": "npm run test:coverage --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20.11.0",
+    "npm": ">=10.0.0"
+  }
+}

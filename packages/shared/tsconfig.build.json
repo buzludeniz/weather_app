@@ -1,0 +1,30 @@
+{
+  /* Build-only project.
+   *
+   * `build`, `lint` and `typecheck` all pointed at the single tsconfig.json, so
+   * excluding tests HERE rather than there is the only way to keep them out of the
+   * published output without also dropping the 45 shared tests out of
+   * `npm run typecheck` -- which is where the EPA AQI derivation and the contracts
+   * both clients validate against are actually checked.
+   *
+   * Without this, tsc compiled the test files straight into dist/ and the package
+   * shipped its own test suite. Vitest did not double-count them, because its
+   * default exclude covers any directory named dist -- but a sibling directory
+   * such as dist__bak is NOT excluded, and when one was left lying around the
+   * suite silently reported 90 tests instead of 45. Keeping the emit clean removes
+   * the whole class of accident.
+   *
+   * DANGER, learned the hard way. tsconfig allows only JSON and block comments,
+   * and a block comment ends at the first two-star-slash it meets. Writing a glob
+   * out in prose -- "src, two stars, slash-star" -- puts that terminator inside
+   * the comment, and everything after it is parsed as JSON. The result is ~150
+   * TS1xxx errors and exit code 2, but tsc STILL EMITS, so dist/ looks correct and
+   * both `npm test` and `npm run typecheck` stay green. The only signal is the
+   * build's exit code, which is exactly what CI gates on and nobody runs locally.
+   * R1 caught it. Describe globs in words in this file; the one real glob is the
+   * exclude pattern in the array below, where it belongs. */
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "src/**/*.test.ts"
+  ]
+}

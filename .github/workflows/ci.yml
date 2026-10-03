@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20.x]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # MUST come before the tests. `@nimbus/shared` resolves at RUNTIME through
+      # `packages/shared/dist`, and `dist/` is gitignored, so on a fresh checkout it
+      # does not exist. Without this step the API tests exit 1 with `Failed to
+      # resolve entry for package "@nimbus/shared"` -- measured at 6 of 11 API test
+      # files. This step was absent, which is why the pipeline could not reproduce
+      # the suite it claimed to gate.
+      #
+      # It is NOT needed for `lint` or `typecheck`: those resolve `@nimbus/shared`
+      # to `packages/shared/src/index.ts` via tsconfig `paths`, and both exit 0 with
+      # `dist` deleted. An earlier version of this comment claimed typecheck failed
+      # without the build too. It does not, and asserting it was wrong -- the third
+      # time in this repo a load-bearing comment stated something the tooling
+      # contradicts (the first two: `contracts/weather.ts` certifying the last
+      # fabricated zero was already gone, and a glob in `tsconfig.build.json`'s
+      # comment that terminated the comment early and broke the build). The step is
+      # still required -- but for the tests alone, and that is all it claims now.
+      - name: Build shared package
+        run: npm run build -w @nimbus/shared
+
+      - name: Lint / Typecheck
+        run: |
+          npm run lint
+          npm run typecheck
+
+      # `@nimbus/shared` carries the EPA AQI derivation, the contracts both clients
+      # validate against, and the insight builders. Its 45 tests were never run in
+      # CI at all: the old workflow invoked only the api and mobile workspaces.
+      - name: Run shared tests
+        run: npm run -w @nimbus/shared test
+
+      - name: Run API tests
+        run: npm run -w @nimbus/api test
+
+      - name: Run Mobile tests
+        run: npm run -w @nimbus/mobile test
+
+      - name: Build API
+        run: npm run -w @nimbus/api build

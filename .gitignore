@@ -1,0 +1,21 @@
+node_modules/
+dist/
+coverage/
+.expo/
+.expo-shared/
+.turbo/
+.env
+.env.*
+!.env.example
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+*.tsbuildinfo
+android/
+ios/
+
+# A live working-state note for whoever picks this up next. It documents an
+# in-progress build with open defects, which does not belong in the repository.
+# Delete the entry and the file once the work is concluded.
+HANDOFF.md
