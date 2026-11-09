@@ -38,9 +38,9 @@ Then open:
 | The landing page | <http://127.0.0.1:8080/landing.html> |
 | Health check | <http://127.0.0.1:4000/health> |
 
-> **Use `127.0.0.1`, not `localhost`.** The API binds IPv4 only, and `localhost`
-> resolves to `::1` first on Windows — so `localhost` fails with a connection
-> error while the server is demonstrably running.
+> **Prefer `127.0.0.1` over `localhost`.** On some Windows setups `localhost`
+> resolves to `::1` first and the connection fails while the server is running;
+> the explicit IPv4 address avoids that.
 
 Without an API key the API falls back to a deterministic sample provider and
 every response is labelled `is-sample` in the page's provenance badge. Nothing
@@ -61,9 +61,11 @@ npm run migrate && npm run db:seed
 ```
 backend/         @nimbus/api      Express + TypeScript, feature-based
   src/features/
-    weather/      provider mappers, solar/lunar maths, alerts, insights
+    weather/      provider mappers, routes, service
     locations/    geocoding, featured cities
-    alerts/       incident state machine, scheduler
+    notifications/ alert incident state machine, push delivery
+    health/       health route
+  src/jobs/       alert scanner and scheduler
   tests/          unit + integration
 mobile/          @nimbus/mobile   Expo / React Native
 packages/shared/ @nimbus/shared   Zod contracts + astronomy + lunar maths
@@ -78,7 +80,7 @@ docs/
 DEPLOYMENT.md                      container and hosting notes
 ```
 
-`frontend/` has **no build step**. It is three files served statically, which is
+`frontend/` has **no build step**. It is four files served statically, which is
 why it is also the fastest thing to iterate on and the easiest thing to break
 subtly.
 
@@ -92,16 +94,16 @@ at runtime and cannot reject a malformed payload, whereas a Zod schema can — a
 can therefore be used to *prove* a value is present before dereferencing it.
 
 The schema's nullability is the interesting part. Every field that can genuinely
-be absent in production is `.nullable()`, and the reason is written next to it:
+be absent in production is `.nullable()` or `.optional()`, and the reason is written next to it:
 
 | field | why it can be absent |
 |---|---|
-| `uvIndex`, `dewPoint`, `windGust` | the free provider tier reports none of them |
+| `uvIndex`, `dewPoint`, `windGust` | the free provider tier never reports the first two and usually omits gusts |
 | `pressure`, `visibility`, `cloudCoverage` | absent from a partial payload |
 | `windDirection` | the provider omits the `wind` block entirely in calm conditions |
 | `sunrise`, `sunset` | **there is no sun event at all** above the Arctic circle, for weeks or months |
 | `moonrise`, `moonset` | the moon does not cross the horizon on a given day |
-| all nine twilight/moon fields | a band may not occur at that latitude on that day |
+| the four golden/blue-hour fields | a band may not occur at that latitude on that day |
 | `daily[].precipitationProbability` | the synthesised rest-of-today row has no forecast for its remaining hours |
 | `daily[].airQuality`, `bundle.airQuality` | the 5-day endpoint carries none; `/air_pollution` is metered separately and can 401 |
 | all six `airQuality` components | a payload with no `components` block |
@@ -145,7 +147,7 @@ Two things that are load-bearing and easy to break:
 
 ```bash
 npm run typecheck                                  # every workspace
-npm run test                                       # 160 api + 35 shared + 8 mobile
+npm run test                                       # 189 api + 45 shared + 8 mobile
 npm run test -w @nimbus/api
 ```
 
@@ -155,15 +157,6 @@ compile error shipped undetected through two review rounds.
 
 > `@nimbus/shared` resolves to `dist/`, not to source. After editing it, run
 > `npm run build -w @nimbus/shared` or you will be testing the previous build.
-
-### Known blocker
-
-`npm run typecheck` currently reports **4 errors**, all from one cause:
-`mobile/src/navigation/RootNavigator.tsx` imports four screens that do not exist
-(`CompareScreen`, `SavedLocationsScreen`, `SettingsScreen`, `TravelPlannerScreen`).
-**The mobile app does not compile.** It is pre-existing and unrelated to the web
-client, but it blocks the alerts milestone and it is the single thing standing
-between this repo and a green gate.
 
 ---
 
@@ -184,8 +177,8 @@ GET  /v1/locations                     featured cities
 GET  /v1/locations/search?q=
 ```
 
-`bundle` returns `current`, `hourly`, `daily`, `airQuality?`, `astronomy`,
-`alerts`, `insights`, `mapLayers` and `source`.
+`bundle` returns `location`, `current`, `hourly`, `daily`, `airQuality?`,
+`astronomy`, `alerts`, `insights`, `mapLayers`, `source?` and `generatedAt`.
 
 ---
 
@@ -210,11 +203,7 @@ contracts already carry the nullability.
 
 ## Not built
 
-- The mobile app does not compile (four missing screens, above).
 - Push notification delivery is scaffolded but unverified end to end.
-- The alerts milestone has a PRD and a plan in `docs/` and a working scanner, but
-  no production scheduler wiring.
-- There is no test that boots the API and asserts a response — the current tests
-  are unit-level against pure mappers.
-- **There is no git repository.** Every change in this project is uncommitted
-  working-tree state. There is no undo.
+- The alerts milestone has a PRD and a plan in `docs/`. The scanner runs on a
+  scheduler inside the API process (disable it with `ALERT_SCANNER_ENABLED=false`);
+  there is no separate production worker for it.
