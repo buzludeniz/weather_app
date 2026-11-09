@@ -24,7 +24,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "engines": {
-    "node": ">=20.11.0",
+    "node": ">=22.0.0",
     "npm": ">=10.0.0"
   },
   "optionalDependencies": {
