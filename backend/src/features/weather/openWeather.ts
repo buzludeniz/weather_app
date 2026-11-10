@@ -419,7 +419,7 @@ function dayMeasurements(
       "daily row has no usable temperature and no current window to fall back on",
     );
   }
-  const temps = reported.length ? reported : [fallback as number];
+  const temps = reported.length > 0 ? reported : [fallback as number];
   const slotHigh = Math.max(...temps);
   const slotLow = Math.min(...temps);
   /* Clamp against the provider's own current-window range.
@@ -589,7 +589,7 @@ export function mapAirQuality(airData: any): AirQuality | undefined {
    *
    * `renderAirQuality(null)` already exists on the client and prints "No air
    * quality data", and the bundle field is optional. */
-  if (!item) return undefined;
+  if (item == null) return undefined;
   /* The six components are the payload's own measurements, so the index is
    * DERIVED from them rather than invented.
    *
@@ -719,7 +719,7 @@ export function buildInsights(
    * warmer than today" with "Today: 14.5 C" as evidence, for a day whose real
    * high was near thirty. A trend is a claim about two numbers, and with one of
    * them unknown the honest output is no trend. */
-  if (daily.length > 1 && !daily[0]?.partial && !daily[1]?.partial) {
+  if (daily.length > 1 && daily[0]?.partial !== true && daily[1]?.partial !== true) {
     const todayHigh = daily[0]?.high ?? current.temperature;
     const tomorrowHigh = daily[1]?.high ?? current.temperature;
     const diff = Math.round(tomorrowHigh - todayHigh);
@@ -950,8 +950,11 @@ export async function fetchOpenWeatherBundle(
     // coordinate produced the same `owm-0` id, two different unknown locations
     // collided on `source_id` and the saved-locations upsert silently overwrote
     // one with the other. Fall back to the coordinates, which are unique.
-    id: `owm-${owCurrent.id || `${lat.toFixed(3)},${lon.toFixed(3)}`}`,
-    name: owCurrent.name?.trim() || "Unknown location",
+    id: `owm-${owCurrent.id != null && owCurrent.id !== 0 && owCurrent.id !== "" ? owCurrent.id : `${lat.toFixed(3)},${lon.toFixed(3)}`}`,
+    name:
+      typeof owCurrent.name === "string" && owCurrent.name.trim() !== ""
+        ? owCurrent.name.trim()
+        : "Unknown location",
     country: owCurrent.sys?.country ?? "",
     coordinates: { lat, lon },
     timezone: offsetTimeZone(owCurrent.timezone),

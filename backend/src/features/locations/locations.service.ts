@@ -93,7 +93,7 @@ export async function searchLocations(query: string): Promise<LocationResult[]> 
     return data.map((item: any) => ({
       id: `owm-geo-${item.lat.toFixed(4)}-${item.lon.toFixed(4)}`,
       name: item.name,
-      region: item.state || "",
+      region: typeof item.state === "string" ? item.state : "",
       country: item.country,
       coordinates: { lat: item.lat, lon: item.lon },
       // The geocoding payload carries the same `timezone` offset (in seconds)

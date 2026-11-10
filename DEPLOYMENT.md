@@ -1,18 +1,40 @@
 # Deployment
 
-This project uses Docker and can be run locally with `docker-compose` for development, and built into containers for production.
+This project uses Docker and can be run locally with `docker compose` for development, and built into containers for production.
+
+The API image is built from the repository root with `backend/Dockerfile` (multi-stage: it builds
+`@nimbus/shared` and the API, then ships only production dependencies, the compiled output, the
+operational scripts and the migration SQL). It runs as the `node` user and listens on port **4000**.
+
+```bash
+docker build -f backend/Dockerfile -t nimbus-api .
+```
 
 ## Local development (Docker)
 
-1. Copy `.env.example` to `.env` and update values.
+1. Copy `.env.example` to `.env` and update values. Compose reads `WEATHER_PROVIDER_API_KEY`,
+   `WEATHER_PROVIDER_BASE_URL` and `EXPO_ACCESS_TOKEN` from it; the database and Redis URLs are
+   set by `docker-compose.yml` itself.
 
 2. Start services:
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
-3. The API will be available at `http://localhost:3000`.
+   The `api` container applies migrations, seeds a sample installation, then starts the server.
+   If a migration or the seed fails, the container exits instead of serving a half-migrated
+   database.
+
+3. The API will be available at `http://localhost:4000` (`GET /health` reports database and Redis
+   status).
+
+4. Optional: run the standalone alert scanner as well. Set `ALERT_SCANNER_ENABLED=false` on the
+   `api` service first, or both processes will scan.
+
+```bash
+docker compose --profile scanner up --build
+```
 
 ## Required environment variables
 
@@ -54,10 +76,15 @@ fly secrets set \
 fly deploy
 ```
 
-Migrations are applied by running `node scripts/run_migrations.js` once, from the `api` machine:
+`fly.toml` sets `ALERT_SCANNER_ENABLED=false` app-wide: only the API process reads it, while
+`scan.js` always scans, so each alert is evaluated exactly once. The `api` group is exposed on
+ports 80/443 (internal port 4000) with an HTTP check on `/health`; the `scanner` group has no
+service and no check.
+
+Migrations are not run on deploy. Apply them once, from an `api` machine:
 
 ```bash
-fly ssh console -C "cd /usr/src/app/backend && node scripts/run_migrations.js"
+fly ssh console --process-group api -C "sh -c 'cd /usr/src/app/backend && node scripts/run_migrations.cjs'"
 ```
 
 ### Verifying the pipeline

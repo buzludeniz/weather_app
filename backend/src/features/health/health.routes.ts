@@ -21,7 +21,7 @@ healthRouter.get("/", asyncHandler(async (_req, res) => {
 
   try {
     const client = redis();
-    if (!client) {
+    if (client == null) {
       checks.redis = "skipped";
     } else {
       if (client.status === "wait") await client.connect();

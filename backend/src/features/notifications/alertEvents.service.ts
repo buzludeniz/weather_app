@@ -258,7 +258,7 @@ export type EvaluateResult = DeliveryOutcome & {
  * practical way to answer "why did I not get a warning about that storm".
  */
 export async function evaluateAlert(input: EvaluateInput): Promise<EvaluateResult> {
-  const { locationKey, alert, detectedAt, installationId } = input;
+  const { locationKey, alert, detectedAt } = input;
   const existing = await findOpenIncident(locationKey, alert.type, detectedAt);
 
   const isQuietHours = input.quietHours

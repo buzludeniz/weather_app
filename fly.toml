@@ -1,7 +1,7 @@
 # Nimbus Weather Platform on Fly.io.
 #
-# Two process groups from the same image:
-#   - `api`     serves HTTP, with the in-process scanner disabled
+# Two process groups from the same image (backend/Dockerfile):
+#   - `api`      serves HTTP on 4000, with the in-process scanner disabled
 #   - `scanner`  runs the severe-alert scan loop and nothing else
 #
 # Splitting them keeps request latency independent of scan work, and lets the
@@ -10,9 +10,10 @@
 # The scanner is a long-running machine rather than a Fly scheduled job. A cron
 # invocation would add container start-up on top of the scheduler's own jitter,
 # which risks breaching the PRD's "push within two minutes of the alert" target.
-# Note `auto_stop_machines = false`: a machine that hibernates when idle would
-# silently stop delivering warnings, which is exactly the failure this
-# deployment exists to prevent.
+# Note `auto_stop_machines = "off"` on the api service and that the scanner has
+# no service at all, so Fly's proxy never stops it: a machine that hibernates
+# when idle would silently stop delivering warnings, which is exactly the
+# failure this deployment exists to prevent.
 
 app = "nimbus-weather"
 primary_region = "ams"
@@ -20,46 +21,61 @@ primary_region = "ams"
 [build]
   dockerfile = "backend/Dockerfile"
 
+[processes]
+  api = "node dist/backend/src/index.js"
+  scanner = "node dist/backend/src/scan.js"
+
 [env]
   NODE_ENV = "production"
   PORT = "4000"
   ALERT_SCAN_INTERVAL_MS = "300000"
+  # Fly has no per-process env in fly.toml. Only the `api` process reads this
+  # flag (backend/src/index.ts); `scan.js` always scans. Setting it app-wide
+  # therefore stops the API from scanning without affecting the scanner, so
+  # every alert is evaluated once.
+  ALERT_SCANNER_ENABLED = "false"
 
 [[services]]
-  http_checks = true
-  auto_stop_machines = false
+  processes = ["api"]
+  internal_port = 4000
+  protocol = "tcp"
+  auto_stop_machines = "off"
   auto_start_machines = true
   min_machines_running = 1
 
   [[services.ports]]
-    port = 4000
+    port = 80
     handlers = ["http"]
     force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
 
   [services.concurrency]
     type = "requests"
     soft_limit = 200
     hard_limit = 250
 
-  [[services.processes]]
-    cmd = "node dist/backend/src/index.js"
-    # The API must not also scan, or every alert would be evaluated twice.
-    env = { ALERT_SCANNER_ENABLED = "false" }
+  [[services.http_checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "get"
+    path = "/health"
+    protocol = "http"
+
+# The scanner serves no traffic, so it has no service and no HTTP check.
+# Liveness is judged by the "Severe weather alert scan" lines in its logs.
 
 [[vm]]
   memory = "512mb"
   cpu_kind = "shared"
   cpus = 1
+  processes = ["api", "scanner"]
 
-  [vm.processes]
-    # Long-running scanner. Not exposed over HTTP.
-    cmd = "node dist/backend/src/scan.js"
-    env = { ALERT_SCANNER_ENABLED = "true" }
-
-  [vm.processes.checks]
-    # No health check: the scanner serves no traffic. Liveness is judged by the
-    # absence of scan lines in the logs.
-
+# Migrations are not run on deploy; see DEPLOYMENT.md.
+#
 # Required secrets, set with `fly secrets set`:
 #   DATABASE_URL        postgres connection string
 #   REDIS_URL           redis connection string

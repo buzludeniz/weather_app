@@ -238,10 +238,6 @@ export function lunarPosition(jd: number): LunarPosition {
   const f = normalizeDegrees(93.272095 + 483202.0175233 * t - 0.0036539 * t * t);
   const a1 = normalizeDegrees(119.75 + 131.849 * t);
   const a2 = normalizeDegrees(53.09 + 479264.290 * t);
-  const a3 = normalizeDegrees(313.45 + 481266.484 * t);
-  const ecc = 1 - 0.002516 * t - 0.0000074 * t * t;
-
-  const argument = (c: number, e: number) => e * Math.pow(ecc, Math.abs(c));
 
   // Longitude: main terms, then the additive corrections.
   let sigmaL = 0;

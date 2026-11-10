@@ -1,0 +1,21 @@
+# Build context is the repository root (see backend/Dockerfile).
+**/node_modules
+**/dist
+**/coverage
+**/*.tsbuildinfo
+.git
+.github
+.env
+.env.*
+!.env.example
+mobile/*
+!mobile/package.json
+frontend
+docs
+*.md
+**/.expo
+**/.turbo
+**/npm-debug.log*
+.DS_Store
+fly.toml
+docker-compose.yml
