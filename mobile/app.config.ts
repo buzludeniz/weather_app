@@ -37,6 +37,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     "react-native-reanimated"
   ],
   extra: {
-    apiUrl: process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000/v1"
+    apiUrl: process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000/v1",
+    // getExpoPushTokenAsync() reads the EAS project id from here. Without it a
+    // development build cannot get a push token (the app still registers, just
+    // without one). Set EAS_PROJECT_ID when building for a real device (T8).
+    ...(process.env.EAS_PROJECT_ID == null ? {} : { eas: { projectId: process.env.EAS_PROJECT_ID } })
   }
 });

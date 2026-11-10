@@ -1,8 +1,10 @@
 module.exports = {
   preset: "jest-expo",
+  setupFiles: ["<rootDir>/jest.setup.ts"],
   collectCoverageFrom: [
     "src/**/*.{ts,tsx}",
-    "!src/**/*.d.ts"
+    "!src/**/*.d.ts",
+    "!src/test/**"
   ],
   coverageThreshold: {
     global: {

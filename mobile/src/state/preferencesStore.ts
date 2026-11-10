@@ -9,6 +9,7 @@ type PreferencesState = {
   setTheme: (theme: ThemePreference) => void;
   toggleNotification: (key: keyof UserPreferences["notifications"]) => void;
   togglePrivacy: (key: keyof UserPreferences["privacy"]) => void;
+  setQuietHours: (start: string, end: string) => void;
 };
 
 export const usePreferencesStore = create<PreferencesState>()(
@@ -35,6 +36,12 @@ export const usePreferencesStore = create<PreferencesState>()(
             ...state.preferences.privacy,
             [key]: !state.preferences.privacy[key]
           }
+        }
+      })),
+      setQuietHours: (quietHoursStart, quietHoursEnd) => set((state) => ({
+        preferences: {
+          ...state.preferences,
+          notifications: { ...state.preferences.notifications, quietHoursStart, quietHoursEnd }
         }
       }))
     }),
