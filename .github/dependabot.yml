@@ -8,6 +8,24 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # Expo-managed native packages: Expo SDK 53 pins their major.minor (see
+      # expo/bundledNativeModules.json). A minor bump here (e.g. react-native
+      # 0.79 -> 0.88 in #3) is really an SDK upgrade and broke the mobile build;
+      # mobile/__tests__/expoSdkCompat.test.ts enforces this. Patches still flow.
+      - dependency-name: "react"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "@types/react"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "react-native"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "react-native-*"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "expo"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "expo-*"
+        update-types: ["version-update:semver-minor"]
+      - dependency-name: "jest-expo"
+        update-types: ["version-update:semver-minor"]
     groups:
       npm-minor-and-patch:
         update-types:
