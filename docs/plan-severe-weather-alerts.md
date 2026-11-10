@@ -8,26 +8,21 @@ reviewed independently.
 | Task | Status                                                            |
 | ---- | ----------------------------------------------------------------- |
 | T1   | Done. Saved locations persist and sync. Mobile identity added here. |
-| T2   | Not started. Depends on the mobile app compiling (see Blocker).     |
+| T2   | Done. Push registration on launch and on token change; Saved places and Settings screens. |
 | T3   | Done. Expo push client and notification content.                    |
 | T4   | Done. Incident tracking, fingerprinting, quiet hours.               |
 | T5   | Done. Scanner rewritten around subscribers.                         |
 | T6   | Done. Synthetic alert path, guarded against production.             |
 | T7   | Done. Scheduler, standalone entrypoint, Fly.io and Compose config.  |
-| T8   | Blocked. Needs a real device, which needs the mobile app to build.  |
+| T8   | Unblocked, not run. The app now has everything T8 drives; the manual steps need a real device. |
 
-## Blocker: the mobile app does not compile
+## Blocker: the mobile app does not compile (resolved)
 
-`mobile/src/navigation/RootNavigator.tsx` imports four screens that do not exist:
-`compare/screens/CompareScreen`, `locations/screens/SavedLocationsScreen`,
-`settings/screens/SettingsScreen`, and `travel/screens/TravelPlannerScreen`. The feature
-directories exist but are empty. There are also three unrelated type errors: two icon-name
-mismatches in `CurrentWeatherHero.tsx` and `DailyForecastList.tsx`, and an
-`expo-notifications` trigger type error in `notificationService.ts`.
-
-This predates the milestone and blocks T2 and T8, since neither push registration nor device
-verification can happen without a running app. Two of the four missing screens
-(`SavedLocationsScreen`, `SettingsScreen`) are where this milestone's settings actually live.
+`RootNavigator` imported four screens that did not exist, plus three unrelated type errors. All
+of those were fixed before this milestone continued, and the four routes got placeholder screens so
+`tsc` passed. `SavedLocationsScreen` and `SettingsScreen`, the two this milestone needs, are now
+real screens (T2). `CompareScreen` and `TravelPlannerScreen` are still placeholders and are outside
+this milestone.
 
 ## Deviations from the original plan
 
@@ -41,7 +36,29 @@ verification can happen without a running app. Two of the four missing screens
 - **T7's scheduler is instance-scoped.** `createAlertScheduler()` rather than module state,
   because a hung scan would otherwise latch the overlap guard shut and silently stop all alerts.
 
+- **T2 registers on every launch instead of diffing tokens.** `POST /v1/notifications/register`
+  is an upsert on `device_id`, so re-registering is idempotent. The Expo token is read fresh each
+  time and also on `addPushTokenListener`, so a rotated token always reaches the server. No token
+  is cached on the phone (`mobile/src/services/registrationService.ts`).
+- **T2 also mirrors notification preferences.** The scanner reads `severe_alerts` and the
+  quiet-hours window from `notification_preferences`, but nothing on the phone sent them. Settings
+  now `PUT`s them to `/v1/notifications/:installationId/preferences` on launch and on change. Saved
+  places are mirrored on change too, not only at launch.
+- **Settings shows only settings that something reads.** `rainSoon`, `airQuality`, `language` and
+  the privacy flags exist in `UserPreferences` but have no consumer, so they get no switch.
+- **A development-only "Send a test severe alert" button** in Settings calls the T6 route for this
+  installation. It is the T8 trigger, and it shows the 404 a production server returns.
+- **`EAS_PROJECT_ID`** is passed through `app.config.ts` (`extra.eas.projectId`). A development
+  build cannot get an Expo push token without it. The app still registers without a token, and
+  Settings says that alerts cannot reach the phone.
+
 ## Pre-existing bugs found and fixed
+
+- **Startup sync could overwrite the server's saved locations with the default list.**
+  `syncSavedLocations` read the zustand store before `persist` had loaded it from AsyncStorage,
+  so on a slow read it sent the in-code default (Tirana only) and the server replaced the user's
+  real set with it, which is the set the scanner watches. It now waits for hydration
+  (`mobile/src/state/hydration.ts`), and so does the preferences sync.
 
 - **`lunarAltitude` and `lunarPosition` returned `NaN`.** `Math.asin` was called on expressions
   analytically bounded by 1 but exceeding it through floating-point error. `NaN` fails every
@@ -352,6 +369,12 @@ final `fly deploy` is yours to run.
 4. Let it lapse past the gap, re-inject, and confirm exactly one new push.
 5. Observe 7 days of ordinary conditions and confirm zero unwanted pushes.
 6. After 4 weeks, confirm notifications are still enabled.
+
+**Before step 1:** set `EAS_PROJECT_ID` and `EXPO_PUBLIC_API_URL` (a non-production API, so
+the synthetic route exists) for the build. In the app, check that Settings → Severe weather alerts
+says "This phone is registered for severe weather alerts." and that Saved places says "The alert
+server is watching these places." Then use Settings → Developer → "Send a test severe alert" for
+steps 2 and 4.
 
 **Note:** Step 6 is the metric that actually matters. If notifications are off by then, the feature
 failed regardless of the others.

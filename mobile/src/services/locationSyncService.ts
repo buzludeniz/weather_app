@@ -1,6 +1,7 @@
 import type { LocationResult } from "@nimbus/shared";
 import { apiPut } from "./apiClient";
 import { getInstallationId } from "./installationStore";
+import { waitForHydration } from "../state/hydration";
 import { useLocationStore } from "../state/locationStore";
 
 /**
@@ -30,14 +31,23 @@ function toPayload(location: LocationResult, index: number) {
   };
 }
 
-export async function syncSavedLocations(): Promise<void> {
-  const installationId = await getInstallationId();
-  // No registration yet, so there is nothing to attach locations to. The next
-  // sync after registration will send them.
-  if (!installationId) return;
+/** The API accepts at most this many saved locations per installation. */
+export const MAX_SYNCED_LOCATIONS = 50;
 
+/**
+ * "unregistered" means there is no installation id yet, so there is nothing to
+ * attach locations to. The next sync after registration sends them.
+ */
+export type SyncOutcome = "synced" | "unregistered";
+
+export async function syncSavedLocations(): Promise<SyncOutcome> {
+  const installationId = await getInstallationId();
+  if (installationId == null || installationId === "") return "unregistered";
+
+  await waitForHydration(useLocationStore);
   const savedLocations = useLocationStore.getState().savedLocations;
   await apiPut(`locations/saved/${installationId}`, {
     locations: savedLocations.map(toPayload)
   });
+  return "synced";
 }
