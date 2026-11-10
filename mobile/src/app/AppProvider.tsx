@@ -10,6 +10,8 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { RootNavigator } from "../navigation/RootNavigator";
 import { usePreferencesStore } from "../state/preferencesStore";
+import { onPushTokenChange } from "../services/notificationService";
+import { registerInstallation } from "../services/registrationService";
 import { runStartupSync } from "../services/startupSync";
 import { AppThemeContext } from "../theme/useAppTheme";
 import { darkTheme, lightTheme } from "../theme/tokens";
@@ -41,6 +43,14 @@ export function AppProvider() {
   useEffect(() => {
     void runStartupSync();
   }, []);
+
+  // T2: when the OS rotates the push token, re-register so the server has the
+  // new one now rather than on the next launch.
+  useEffect(() => onPushTokenChange(() => {
+    registerInstallation().catch((error: unknown) => {
+      console.warn("[nimbus] re-registration after token change failed", error);
+    });
+  }), []);
 
   const navigationTheme = useMemo(() => {
     const base = theme.mode === "dark" ? NavigationDarkTheme : NavigationLightTheme;

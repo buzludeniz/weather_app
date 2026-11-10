@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { LocationResult } from "@nimbus/shared";
+import { moveItem } from "../utils/list";
 
 export const defaultLocation: LocationResult = {
   id: "tirana-al",
@@ -21,6 +22,7 @@ type LocationState = {
   saveLocation: (location: LocationResult) => void;
   removeLocation: (id: string) => void;
   toggleFavorite: (id: string) => void;
+  moveLocation: (id: string, delta: number) => void;
 };
 
 function uniqueById(locations: LocationResult[]): LocationResult[] {
@@ -47,6 +49,13 @@ export const useLocationStore = create<LocationState>()(
         savedLocations: state.savedLocations.map((location) => (
           location.id === id ? { ...location, isFavorite: !location.isFavorite } : location
         ))
+      })),
+      moveLocation: (id, delta) => set((state) => ({
+        savedLocations: moveItem(
+          state.savedLocations,
+          state.savedLocations.findIndex((location) => location.id === id),
+          delta
+        )
       }))
     }),
     {
