@@ -8,19 +8,20 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      # Expo-managed native packages: Expo SDK 53 pins their major.minor (see
-      # expo/bundledNativeModules.json). A minor bump here (e.g. react-native
-      # 0.79 -> 0.88 in #3) is really an SDK upgrade and broke the mobile build;
-      # mobile/__tests__/expoSdkCompat.test.ts enforces this. Patches still flow.
+      # Pinned EXACTLY by Expo SDK 53 (expo/bundledNativeModules.json: react
+      # 19.0.0, react-native 0.79.6). React Native 0.79.6's bundled renderer
+      # throws "Incompatible React versions" unless react is exactly 19.0.0, and
+      # jest-expo 53 hard-pins react-test-renderer 19.0.0, which
+      # @testing-library/react-native needs to equal react. So these three move
+      # only with an Expo SDK upgrade, never through Dependabot (see #18-#24).
       - dependency-name: "react"
-        update-types: ["version-update:semver-minor"]
-      # @testing-library/react-native requires react-test-renderer to be EXACTLY
-      # the same version as react, so it follows react's rules.
       - dependency-name: "react-test-renderer"
-        update-types: ["version-update:semver-minor"]
-      - dependency-name: "@types/react"
-        update-types: ["version-update:semver-minor"]
       - dependency-name: "react-native"
+      # Other Expo-managed packages: Expo SDK 53 pins their major.minor. A minor
+      # bump here (e.g. react-native 0.79 -> 0.88 in #3) is really an SDK upgrade
+      # and broke the mobile build; mobile/__tests__/expoSdkCompat.test.ts
+      # enforces this. Patches still flow.
+      - dependency-name: "@types/react"
         update-types: ["version-update:semver-minor"]
       - dependency-name: "react-native-*"
         update-types: ["version-update:semver-minor"]
@@ -31,13 +32,6 @@ updates:
       - dependency-name: "jest-expo"
         update-types: ["version-update:semver-minor"]
     groups:
-      # react and react-test-renderer are pinned to the same exact version and
-      # must move together (PRs #18/#19 bumped them apart and broke mobile tests).
-      # Groups are matched in order, so this one claims them before the catch-all.
-      react-lockstep:
-        patterns:
-          - "react"
-          - "react-test-renderer"
       npm-minor-and-patch:
         update-types:
           - minor
