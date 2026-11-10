@@ -29,8 +29,8 @@
     "expo-notifications": "~0.31.0",
     "expo-secure-store": "~14.2.0",
     "expo-status-bar": "~2.2.0",
-    "react": "19.0.0",
-    "react-native": "0.79.6",
+    "react": "19.0.9",
+    "react-native": "0.79.7",
     "react-native-gesture-handler": "~2.24.0",
     "react-native-reanimated": "~3.17.0",
     "react-native-safe-area-context": "~5.4.0",
@@ -45,7 +45,7 @@
     "@types/react": "~19.0.0",
     "jest": "^29.7.0",
     "jest-expo": "~53.0.0",
-    "react-test-renderer": "^19.0.0",
+    "react-test-renderer": "^19.3.1",
     "typescript": "^5.8.0"
   }
 }
