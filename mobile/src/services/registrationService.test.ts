@@ -16,6 +16,17 @@ const post = jest.mocked(apiPost);
 const permissions = jest.mocked(Notifications.requestPermissionsAsync);
 const token = jest.mocked(Notifications.getExpoPushTokenAsync);
 
+async function waitFor(condition: () => boolean) {
+  for (let i = 0; i < 50 && !condition(); i++) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  expect(condition()).toBe(true);
+}
+
+function waitForCalls(count: number) {
+  return waitFor(() => post.mock.calls.length >= count);
+}
+
 beforeEach(() => {
   post.mockReset();
   permissions.mockResolvedValue({ granted: true } as Awaited<ReturnType<typeof Notifications.requestPermissionsAsync>>);
@@ -112,9 +123,38 @@ describe("registerInstallation", () => {
     expect(useRegistrationStore.getState().status).toBe("failed");
   });
 
-  it("shares one request between concurrent callers", async () => {
+  it("shares the in-flight request, then registers once more so a token that changed meanwhile is sent", async () => {
     post.mockResolvedValue({ installationId: "id" });
-    await Promise.all([registerInstallation(), registerInstallation()]);
+    const first = registerInstallation();
+    // The token rotates while the first request (which read the old one) is in flight.
+    token.mockResolvedValue({ type: "expo", data: "ExponentPushToken[rotated]" });
+    const second = registerInstallation();
+    const third = registerInstallation();
+    expect(second).toBe(first);
+    expect(third).toBe(first);
+
+    await first;
+    await waitForCalls(2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(post).toHaveBeenCalledTimes(2);
+    expect((post.mock.calls[1]?.[1] as { pushToken: string }).pushToken).toBe("ExponentPushToken[rotated]");
+  });
+
+  it("does not register again when nothing arrived during the request", async () => {
+    post.mockResolvedValue({ installationId: "id" });
+    await registerInstallation();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs a failed follow-up registration instead of leaving it unhandled", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    post.mockResolvedValueOnce({ installationId: "id" }).mockRejectedValueOnce(new Error("offline"));
+    const first = registerInstallation();
+    void registerInstallation();
+    await first;
+    await waitFor(() => warn.mock.calls.some((call) => call[0] === "[nimbus] follow-up registration failed"));
+    warn.mockRestore();
   });
 });

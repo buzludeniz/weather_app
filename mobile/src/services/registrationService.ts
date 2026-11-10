@@ -67,16 +67,30 @@ export function buildRegistrationPayload(input: {
 }
 
 let inFlight: Promise<string> | null = null;
+let rerunRequested = false;
 
 /**
  * Register and return the installation id. Concurrent callers (startup and a
- * token-change event, say) share one request.
+ * token-change event, say) share one request. A call that arrives while a
+ * request is in flight also queues exactly one more registration after it,
+ * because the in-flight request may already have read the old push token.
  */
 export function registerInstallation(): Promise<string> {
-  inFlight ??= doRegister().finally(() => {
+  if (inFlight != null) {
+    rerunRequested = true;
+    return inFlight;
+  }
+  const current = doRegister().finally(() => {
     inFlight = null;
+    if (rerunRequested) {
+      rerunRequested = false;
+      registerInstallation().catch((error: unknown) => {
+        console.warn("[nimbus] follow-up registration failed", error);
+      });
+    }
   });
-  return inFlight;
+  inFlight = current;
+  return current;
 }
 
 async function doRegister(): Promise<string> {
