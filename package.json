@@ -14,9 +14,9 @@
     "local:api": "npm run build -w @nimbus/shared && npm run dev -w @nimbus/api",
     "dev:mobile": "npm run build -w @nimbus/shared && npm run start -w @nimbus/mobile",
     "local:web": "npm run serve:web",
-    "dev:compose": "docker-compose up --build",
-    "migrate": "node backend/scripts/run_migrations.js",
-    "db:seed": "node backend/scripts/seed.js",
+    "dev:compose": "docker compose up --build",
+    "migrate": "node backend/scripts/run_migrations.cjs",
+    "db:seed": "node backend/scripts/seed.cjs",
     "serve:web": "npx http-server frontend -p 8080 -c-1",
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
@@ -29,5 +29,10 @@
   },
   "optionalDependencies": {
     "@rollup/rollup-linux-x64-gnu": "4.62.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.14.0",
+    "typescript-eslint": "^8.72.2"
   }
 }

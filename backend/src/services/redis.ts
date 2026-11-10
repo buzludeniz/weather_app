@@ -7,7 +7,7 @@ let redisClient: any = null;
 
 export function redis(): any | null {
   if (env.NODE_ENV === "test") return null;
-  if (!redisClient) {
+  if (redisClient == null) {
     const RedisCtor = (Redis as unknown as any);
     redisClient = new RedisCtor(env.REDIS_URL, {
       enableReadyCheck: true,
@@ -21,12 +21,12 @@ export function redis(): any | null {
 
 export async function getCachedJson<T>(key: string, ttlSeconds: number, factory: () => Promise<T>): Promise<T> {
   const client = redis();
-  if (!client) return factory();
+  if (client == null) return factory();
 
   try {
     if (client.status === "wait") await client.connect();
     const cached = await client.get(key);
-    if (cached) return JSON.parse(cached) as T;
+    if (typeof cached === "string" && cached !== "") return JSON.parse(cached) as T;
 
     const value = await factory();
     await client.set(key, JSON.stringify(value), "EX", ttlSeconds);

@@ -98,7 +98,7 @@ if (syntheticAlertsEnabled()) {
     validate({ body: InjectAlertSchema }),
     asyncHandler(async (req, res) => {
       const body = req.body as z.infer<typeof InjectAlertSchema>;
-      const at = body.advanceMinutes
+      const at = body.advanceMinutes != null && body.advanceMinutes !== 0
         ? new Date(Date.now() + body.advanceMinutes * 60_000)
         : new Date();
 

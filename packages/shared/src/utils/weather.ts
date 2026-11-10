@@ -138,7 +138,7 @@ export function aqiFromComponents(c: AqiComponents): number | null {
   ];
 
   const values = candidates.filter((v): v is number => v !== null);
-  return values.length ? Math.max(...values) : null;
+  return values.length > 0 ? Math.max(...values) : null;
 }
 
 export function aqiCategory(aqi: number): AirQuality["category"] {

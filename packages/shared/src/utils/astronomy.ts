@@ -17,8 +17,6 @@ import type { MoonPhase } from "../contracts/weather.js";
 const DEG = Math.PI / 180;
 const RAD = 180 / Math.PI;
 
-/** Solar altitude at which sunrise/sunset are declared (refraction + limb). */
-const SUNRISE_ZENITH = 90.833;
 /** One synodic month, in days. */
 const SYNODIC_MONTH = 29.530588853;
 /** A known new moon: 2000-01-06 18:14 UTC. */
@@ -109,7 +107,7 @@ export type SunTimes = {
  * `date` at the given coordinates.
  */
 export function sunTimes(date: Date, lat: number, lon: number): SunTimes {
-  const { jDate, solarTransit, declination } = solarTerms(date, lon);
+  const { solarTransit, declination } = solarTerms(date, lon);
   const cosHourAngle =
     (Math.sin(-0.833 * DEG) - Math.sin(lat * DEG) * Math.sin(declination)) /
     (Math.cos(lat * DEG) * Math.cos(declination));

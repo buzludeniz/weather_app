@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   db:
     image: postgres:15
@@ -28,18 +27,31 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     ports:
-      - "3000:3000"
+      - "4000:4000"
     environment:
+      PORT: "4000"
       DATABASE_URL: postgres://postgres:postgres@db:5432/nimbus
       REDIS_URL: redis://redis:6379
       NODE_ENV: development
+      # Read from the repository's .env when present (compose interpolation).
+      WEATHER_PROVIDER_API_KEY: ${WEATHER_PROVIDER_API_KEY:-}
+      WEATHER_PROVIDER_BASE_URL: ${WEATHER_PROVIDER_BASE_URL:-https://api.openweathermap.org/data/2.5}
+      EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_started
     working_dir: /usr/src/app/backend
-    command: sh -c "node scripts/run_migrations.js && node scripts/seed.js || true && node dist/backend/src/index.js"
+    # Each step must succeed: a failed migration or seed stops the container
+    # instead of starting the API against a half-migrated database.
+    command: sh -c "node scripts/run_migrations.cjs && node scripts/seed.cjs && exec node dist/backend/src/index.js"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   # Standalone scanner, for parity with the split deployment. The `api` service
   # above runs its scanner in-process, so this one is only useful if you set
@@ -53,13 +65,19 @@ services:
       REDIS_URL: redis://redis:6379
       NODE_ENV: development
       ALERT_SCANNER_ENABLED: "true"
+      WEATHER_PROVIDER_API_KEY: ${WEATHER_PROVIDER_API_KEY:-}
+      WEATHER_PROVIDER_BASE_URL: ${WEATHER_PROVIDER_BASE_URL:-https://api.openweathermap.org/data/2.5}
+      EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_started
+      # The api service applies migrations before it becomes healthy.
+      api:
+        condition: service_healthy
     working_dir: /usr/src/app/backend
-    command: node dist/backend/src/scan.js
+    command: ["node", "dist/backend/src/scan.js"]
     profiles: ["scanner"]
 
 volumes:

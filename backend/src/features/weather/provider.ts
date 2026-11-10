@@ -270,16 +270,12 @@ export function buildWeatherBundle(location: LocationResult): WeatherBundle {
   const hourly = buildHourly(coordinates, current, now);
   const daily = buildDaily(coordinates, current, now, location.timezone);
   const airQuality = buildAirQuality(coordinates, 90);
-  /* Same guard as the live mapper's temperature-trend insight, for the same
-   * reason: a row whose high equals its low is the absence of a range, not a
-   * narrow day, and a comparison built on it states a difference that was never
-   * measured. Inlined rather than imported — this is the sample provider and it
-   * does not otherwise depend on the OWM mapper. */
-  const hasRange = (d?: { high?: number; low?: number }) =>
-    !!d && d.high != null && d.low != null && d.high !== d.low;
+  /* Same guard as the live mapper's temperature-trend insight: a partial row
+   * has no real range, and a comparison built on it states a difference that
+   * was never measured. */
   const insights: Insight[] = [
     ...buildCoreInsights(current, hourly),
-    ...(!daily[0]?.partial && !daily[1]?.partial
+    ...(daily[0]?.partial !== true && daily[1]?.partial !== true
       ? [{
         id: "tomorrow-shift",
         priority: "low" as const,

@@ -141,7 +141,7 @@ describe("createAlertScheduler", () => {
     const first = vi.fn(async () => undefined);
     const second = vi.fn(async () => undefined);
     const a = createAlertScheduler({ scan: first });
-    const b = createAlertScheduler({ scan: second });
+    createAlertScheduler({ scan: second });
 
     await a.runOnce();
 
