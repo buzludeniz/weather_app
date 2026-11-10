@@ -61,6 +61,19 @@ describe("Expo SDK native module compatibility", () => {
     expect(majorMinor(installedVersion("@types/react"))).toBe(majorMinor(installedVersion("react")));
   });
 
+  it("react and react-test-renderer are pinned to the identical version in package.json", () => {
+    // @testing-library/react-native throws unless these match exactly.
+    const pkg = readJson(join(__dirname, "..", "package.json")) as {
+      dependencies: Record<string, string>;
+      devDependencies: Record<string, string>;
+    };
+    const react = pkg.dependencies["react"];
+    const renderer = pkg.devDependencies["react-test-renderer"];
+    expect(react).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(renderer).toBe(react);
+    expect(installedVersion("react-test-renderer")).toBe(installedVersion("react"));
+  });
+
   it("parses versions out of Expo's range syntax", () => {
     expect(majorMinor("~3.17.4")).toBe("3.17");
     expect(majorMinor("0.79.6")).toBe("0.79");

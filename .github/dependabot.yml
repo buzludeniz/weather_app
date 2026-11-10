@@ -14,6 +14,10 @@ updates:
       # mobile/__tests__/expoSdkCompat.test.ts enforces this. Patches still flow.
       - dependency-name: "react"
         update-types: ["version-update:semver-minor"]
+      # @testing-library/react-native requires react-test-renderer to be EXACTLY
+      # the same version as react, so it follows react's rules.
+      - dependency-name: "react-test-renderer"
+        update-types: ["version-update:semver-minor"]
       - dependency-name: "@types/react"
         update-types: ["version-update:semver-minor"]
       - dependency-name: "react-native"
@@ -27,6 +31,13 @@ updates:
       - dependency-name: "jest-expo"
         update-types: ["version-update:semver-minor"]
     groups:
+      # react and react-test-renderer are pinned to the same exact version and
+      # must move together (PRs #18/#19 bumped them apart and broke mobile tests).
+      # Groups are matched in order, so this one claims them before the catch-all.
+      react-lockstep:
+        patterns:
+          - "react"
+          - "react-test-renderer"
       npm-minor-and-patch:
         update-types:
           - minor
