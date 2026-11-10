@@ -147,7 +147,7 @@ Two things that are load-bearing and easy to break:
 
 ```bash
 npm run typecheck                                  # every workspace
-npm run test                                       # 189 api + 45 shared + 84 mobile
+npm run test                                       # 189 api + 45 shared + 98 mobile
 npm run test -w @nimbus/api
 ```
 
